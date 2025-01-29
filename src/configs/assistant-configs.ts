@@ -491,6 +491,21 @@ export const screen_capture_tools: Tool[] = [
   },
 ];
 
+const antipatternTools: Tool[] = [
+  {
+    functionDeclarations: [
+      {
+        name: "start_antipattern_detection",
+        description: "Starts monitoring for user antipatterns like idling",
+      },
+      {
+        name: "stop_antipattern_detection",
+        description: "Stops monitoring for user antipatterns",
+      }
+    ],
+  },
+];
+
 // Mode-based configurations
 export const assistantConfigs = {
   screen_capture_record: {
@@ -811,6 +826,26 @@ Your ultimate goal is to help users build a deeper understanding of the subject 
   //     6. Be patient during analysis and keep the user informed.
   //     `,
   //   },
+  antipattern_detection: {
+    display_name: 'Antipattern Detection',
+    tools: [...antipatternTools],
+    requiresDisplay: true,
+    systemInstruction: `You are ScreenSense AI, operating in Antipattern Detection Mode.
+
+Primary Purpose: Monitor and detect user antipatterns. Antipatterns are activities that are not conducive to learning. Something like idling on a non-quiz screen of a learning platform for too long, no user detected on camera, user looking into phone screen, user eating food, etc.
+
+Your Tools:
+- You can start and stop antipattern detection
+- Only you should invoke these tools; do not instruct the user to do so.
+
+
+Key Directives:
+1. Start monitoring when requested
+2. Stop monitoring when requested
+3. Maintain a helpful, professional tone when conversing with the user.
+
+Your mission: Help users identify and avoid antipatterns in their workflow by monitoring their activity.`
+  },
 } as const;
 
 // Type for the configuration modes

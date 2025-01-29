@@ -131,6 +131,48 @@ export class OpenCVService {
       return [];
     }
   }
+
+  async compareImages(image1Base64: string, image2Base64: string): Promise<{ similarity: number }> {
+    try {
+      const mat1 = await this.base64ToMat(image1Base64);
+      const mat2 = await this.base64ToMat(image2Base64);
+
+      // Convert images to grayscale for better comparison
+      const gray1 = new cv.Mat();
+      const gray2 = new cv.Mat();
+      cv.cvtColor(mat1, gray1, cv.COLOR_RGBA2GRAY);
+      cv.cvtColor(mat2, gray2, cv.COLOR_RGBA2GRAY);
+
+      // Ensure both images are the same size
+      if (gray1.rows !== gray2.rows || gray1.cols !== gray2.cols) {
+        cv.resize(gray2, gray2, new cv.Size(gray1.cols, gray1.rows));
+      }
+
+      // Calculate absolute difference between images
+      const diff = new cv.Mat();
+      cv.absdiff(gray1, gray2, diff);
+
+      // Calculate mean squared error
+      const mse = cv.mean(diff)[0];
+      
+      // Convert MSE to similarity score (0 to 1)
+      // MSE of 0 means identical images (similarity = 1)
+      // Using exponential decay to convert MSE to similarity
+      const similarity = Math.exp(-mse / 255);
+
+      // Cleanup
+      mat1.delete();
+      mat2.delete();
+      gray1.delete();
+      gray2.delete();
+      diff.delete();
+
+      return { similarity };
+    } catch (error) {
+      console.error('Error comparing images:', error);
+      return { similarity: 0 };
+    }
+  }
 }
 
 export const opencvService = new OpenCVService(); 

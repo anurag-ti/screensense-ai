@@ -27,6 +27,8 @@ function SubtitlesComponent({
   const { client, setConfig } = useLiveAPIContext();
   const graphRef = useRef<HTMLDivElement>(null);
   const lastActionTimeRef = useRef<number>(0);
+  const antipatternIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const lastScreenshotRef = useRef<string | null>(null);
 
   useEffect(() => {
     setConfig({
@@ -248,6 +250,33 @@ function SubtitlesComponent({
         ipcRenderer.send('log-to-file', `Failed to capture screenshot`);
       }
     }
+    async function compareScreenshots(screenshot1: string, screenshot2: string): Promise<boolean> {
+      try {
+        // Use opencv service to compare screenshots
+        const result = await opencvService.compareImages(screenshot1, screenshot2);
+        
+        // Consider it idle if similarity is above 95%
+        return result.similarity > 0.80;
+      } catch (error) {
+        console.error('Error comparing screenshots:', error);
+        return false;
+      }
+    }
+
+    async function checkAntipattern() {
+      if (onScreenshot) {
+        const currentScreenshot = onScreenshot();
+        if (currentScreenshot && lastScreenshotRef.current) {
+          const isIdle = await compareScreenshots(currentScreenshot, lastScreenshotRef.current);
+          if (isIdle) {
+            client.send([{ text: `Sitting on idle screen` }]);
+            console.log('Antipattern detected: User has been idle on the same screen');
+          }
+        }
+        lastScreenshotRef.current = currentScreenshot;
+      }
+    }
+
     const onToolCall = async (toolCall: ToolCall) => {
       let hasResponded = false;
 
@@ -413,45 +442,23 @@ function SubtitlesComponent({
           case "continue_action":
             play_action = true;
             break;
-          //           case "perform_action":
-          //             const actionData = await ipcRenderer.invoke('perform-action', (fc.args as any).name);
-          //             if (actionData) {
-          //               for (const action of actionData) {
-          //                 if (onScreenshot) {
-          //                   // Take screenshot and process elements
-          //                   await find_all_elements_function(onScreenshot, client, toolCall);
-
-          //                   // Handle different action types
-          //                   switch (action.function_call) {
-          //                     case "click":
-          //                       client.send([{
-          //                         text: `Based upon the coordinates that you have just seen, perform the 'click_element' function with the coordinates which accomplish the following task : ${action.description}
-
-          // If you find multiple options for the coordinates, choose the one that suits the most. Do not any user opinion for which one to click upon.
-
-          // Please make a correct decision on the required action. Sometimes, we might need to make a double-click or a right click to attain what is required by the task.
-
-          // Please do not give any audio reply to this.`
-          //                       }]);
-          //                       break;
-          //                     case "insert_content":
-          //                       client.send([{
-          //                         text: `You have to call the insert_content function which achieves the following task : ${action.description}
-
-          // please do not give any audio response to this.`
-          //                       }]);
-          //                       break;
-          //                   }
-          //                   // Wait for the action to complete
-          //                   await new Promise(resolve => setTimeout(resolve, 2500));
-          //                 }
-          //               }
-          //             }
-          //             hasResponded = true;
-          //             break;
-          // case "click":
-          //   ipcRenderer.send('click', (fc.args as any).x || 700, (fc.args as any).y || 25);
-          //   break;
+          case "start_antipattern_detection":
+            if (antipatternIntervalRef.current === null) {
+              lastScreenshotRef.current = onScreenshot?.() || null;
+              antipatternIntervalRef.current = setInterval(checkAntipattern, 20000);
+              console.log('Started antipattern detection');
+            }
+            hasResponded = true;
+            break;
+          case "stop_antipattern_detection":
+            if (antipatternIntervalRef.current !== null) {
+              clearInterval(antipatternIntervalRef.current);
+              antipatternIntervalRef.current = null;
+              lastScreenshotRef.current = null;
+              console.log('Stopped antipattern detection');
+            }
+            hasResponded = true;
+            break;
           case "select_content":
             ipcRenderer.send('select-content',
               (fc.args as any).x1 || 500,
@@ -507,6 +514,10 @@ function SubtitlesComponent({
     client.on('toolcall', onToolCall);
     return () => {
       client.off('toolcall', onToolCall);
+      // Clean up interval on unmount
+      if (antipatternIntervalRef.current !== null) {
+        clearInterval(antipatternIntervalRef.current);
+      }
     };
   }, [client, onScreenshot]);
 
