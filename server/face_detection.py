@@ -3,9 +3,17 @@ from flask_cors import CORS
 import cv2
 import numpy as np
 import base64
+from openai import OpenAI
+import logging
+
+client = OpenAI()
 
 app = Flask(__name__)
 CORS(app)
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 def base64_to_cv2(base64_string):
     # Remove data URL prefix if present
@@ -43,5 +51,46 @@ def detect_face():
             'error': str(e)
         }), 500
 
+@app.route('/analyze-screenshot', methods=['POST'])
+def analyze_screenshot():
+    try:
+        data = request.json
+        base64_image = data['image']
+
+        if ',' in base64_image:
+            base64_image = base64_image.split(',')[1]
+        
+        # Add debug logging
+        logger.info("Making OpenAI API request...")
+        
+        response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": "Analyze this screenshot and identify: 1) The application or software being used probably using the URL 2) The course name if visible 3) The subject matter or topic being studied. Return the results in JSON format with keys: app_name, course_name, subject",
+                            },
+                            {
+                                "type": "image_url",
+                                "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"},
+                            },
+                        ],
+                    }
+                ],
+            )
+        logger.info(f"OpenAI API Response: {response.choices[0].message.content}")
+        return jsonify({
+            'analysis': response.choices[0].message.content
+        })
+    
+    except Exception as e:
+        logger.error(f"Error in analyze_screenshot: {str(e)}", exc_info=True)  # Added detailed error logging
+        return jsonify({
+            'error': str(e)
+        }), 500
+
 if __name__ == '__main__':
-    app.run(port=5000) 
+    app.run(debug=True, port=5000) 

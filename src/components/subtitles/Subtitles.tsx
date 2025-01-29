@@ -265,7 +265,7 @@ function SubtitlesComponent({
 
     async function checkAntipattern() {
       if (onScreenshot) {
-        const currentScreenshot = onScreenshot();
+        const currentScreenshot = onScreenshot();        
         const video = document.querySelector('video');
         
         // Check for idle screen
@@ -308,15 +308,40 @@ function SubtitlesComponent({
             }
           }
 
-          if (isIdle && !isUserPresent) {
+          // Analyze screenshot with LLM for app, course, and subject info
+          try {
+            const response = await fetch('http://localhost:5000/analyze-screenshot', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ 
+                image: currentScreenshot,
+                prompt: "Analyze this screenshot and identify: 1) The application or software being used 2) The course name if visible 3) The subject matter or topic being studied. Return the results in JSON format with keys: app_name, course_name, subject"
+              }),
+            });
+
+            if (!response.ok) {
+              throw new Error('Screenshot analysis failed');
+            }
+
+            const analysisResult = await response.json();
+            
+            // Log the analysis results along with antipattern detection
+            if (isIdle && !isUserPresent) {
             client.send([{ text: `User is not present and screen is idle` }]);
             console.log('Antipattern detected: User absent and screen idle');
-          } else if (isIdle) {
+            } else if (isIdle) {
             client.send([{ text: `Sitting on idle screen` }]);
             console.log('Antipattern detected: User has been idle on the same screen');
-          } else if (!isUserPresent) {
-            client.send([{ text: `User is not present` }]);
-            console.log('Antipattern detected: User not present');
+            } else if (!isUserPresent) {
+              client.send([{ text: `User is not present.` }]);
+              console.log('Antipattern detected: User not present', analysisResult);
+            }
+            console.log(analysisResult);
+          } catch (error) {
+            console.error('Error analyzing screenshot:', error);
+            ipcRenderer.send('log-to-file', `Error analyzing screenshot: ${error}`);
           }
         }
         lastScreenshotRef.current = currentScreenshot;
