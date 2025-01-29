@@ -266,11 +266,57 @@ function SubtitlesComponent({
     async function checkAntipattern() {
       if (onScreenshot) {
         const currentScreenshot = onScreenshot();
+        const video = document.querySelector('video');
+        
+        // Check for idle screen
         if (currentScreenshot && lastScreenshotRef.current) {
           const isIdle = await compareScreenshots(currentScreenshot, lastScreenshotRef.current);
-          if (isIdle) {
+          
+          // Check for user presence if video element exists
+          let isUserPresent = true;
+          if (video) {
+            // Create a temporary canvas to analyze video frame
+            const canvas = document.createElement('canvas');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            const ctx = canvas.getContext('2d');
+            
+            if (ctx) {
+              // Draw current video frame to canvas
+              ctx.drawImage(video, 0, 0);
+              const videoFrame = canvas.toDataURL('image/jpeg');
+              
+              // Call server API for face detection
+              try {
+                const response = await fetch('http://localhost:5000/detect-face', {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({ image: videoFrame }),
+                });
+                
+                if (!response.ok) {
+                  throw new Error('Face detection request failed');
+                }
+                
+                const result = await response.json();
+                isUserPresent = result.faceDetected;
+              } catch (error) {
+                console.error('Error detecting user presence:', error);
+              }
+            }
+          }
+
+          if (isIdle && !isUserPresent) {
+            client.send([{ text: `User is not present and screen is idle` }]);
+            console.log('Antipattern detected: User absent and screen idle');
+          } else if (isIdle) {
             client.send([{ text: `Sitting on idle screen` }]);
             console.log('Antipattern detected: User has been idle on the same screen');
+          } else if (!isUserPresent) {
+            client.send([{ text: `User is not present` }]);
+            console.log('Antipattern detected: User not present');
           }
         }
         lastScreenshotRef.current = currentScreenshot;
@@ -445,7 +491,7 @@ function SubtitlesComponent({
           case "start_antipattern_detection":
             if (antipatternIntervalRef.current === null) {
               lastScreenshotRef.current = onScreenshot?.() || null;
-              antipatternIntervalRef.current = setInterval(checkAntipattern, 20000);
+              antipatternIntervalRef.current = setInterval(checkAntipattern, 5000);
               console.log('Started antipattern detection');
             }
             hasResponded = true;
