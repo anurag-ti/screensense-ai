@@ -308,7 +308,7 @@ function SubtitlesComponent({
               },
               body: JSON.stringify({ 
                 image: currentScreenshot,
-                prompt: "Analyze this screenshot and identify: 1) The application or software being used 2) The course name if visible 3) The subject matter or topic being studied. Return the results in JSON format with keys: app_name, course_name, subject"
+                prompt: "Analyze the screenshot and identify: 1) The application or software being used 2) The course name if visible 3) The subject matter or topic being studied. 4) Is active screen of application or not. Return the results in JSON format with keys: app_name, course_name, subject, is_active_screen.  Use null value if you are not able to identify any of the above. Examples of non-active screen inlcude dashboard page, login page, test results page etc. Active screen for an app is something like an assignment page, quiz page, video page for a course etc. "
               }),
             });
             
