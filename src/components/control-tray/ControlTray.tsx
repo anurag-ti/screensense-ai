@@ -125,12 +125,12 @@ function ControlTray({
           data: base64,
         },
       ]);
-      secondaryClient.sendRealtimeInput([
-        {
-          mimeType: 'audio/pcm;rate=16000',
-          data: base64,
-        },
-      ]);
+            // secondaryClient.sendRealtimeInput([
+            //   {
+            //     mimeType: 'audio/pcm;rate=16000',
+            //     data: base64,
+            //   },
+            // ]);
     };
     if (connected && !muted && audioRecorder) {
       audioRecorder.on('data', onData).on('volume', setInVolume).start();
@@ -205,15 +205,15 @@ function ControlTray({
       // Send initial system message about screen sharing state
       if (selectedOption.value === 'screen_capture_record') {
         primaryClient.send([{ text: "Say 'Welcome to Screen Sense AI' and then ask the following question to the user: 'Do you want to start recording action?' If he says yes, then invoke the start_recording function. Give user a confirmation message that you have started recording action or not." }]);
-        secondaryClient.send([{ text: "You are the webcam assistant. Your role is to observe webcam feed" }]);
+        // secondaryClient.send([{ text: "You are the webcam assistant. Your role is to observe webcam feed. Do not say anything unless asked." }]);
       }
       else if (selectedOption.value === 'screen_capture_play') {
         primaryClient.send([{ text: "Say 'Welcome to Screen Sense AI' and then ask the following question to the user: 'Do you want to play recorded action?' If he says yes, invoke the run_action function. If he says no, do nothing. Give user a confirmation message that you have started playing recorded action or not." }]);
-        secondaryClient.send([{ text: "You are the webcam assistant. Your role is to analyze facial expressions and gestures from the webcam feed." }]);
+        // secondaryClient.send([{ text: "You are the webcam assistant. Your role is to observe webcam feed. Do not say anything unless asked." }]);
       }
       else {
         primaryClient.send([{ text: "Screen sharing has been disabled. Any screen content you might see is from an older session and should be completely ignored. Do not use any screen data for your responses. If you have understood, reply with 'Welcome to Screen Sense AI'" }]);
-        secondaryClient.send([{ text: "You are the webcam assistant. Your role is to analyze facial expressions and gestures from the webcam feed." }]);
+        // secondaryClient.send([{ text: "You are the webcam assistant. Your role is to observe webcam feed. Do not say anything unless asked." }]);
       }
     }
   }, [connected, primaryClient, secondaryClient, selectedOption.value]);
@@ -258,18 +258,19 @@ function ControlTray({
             screenCaptureStream.start().then(() => {
               // Send message to Gemini that screen sharing is enabled
               primaryClient.send([{ text: "Screen sharing has been enabled. You can now use screen data for evaluation. If you have understood, reply with 'Screen sharing enabled'" }]);
-              secondaryClient.send([{ text: "Screen sharing has been enabled. You can now use screen data for evaluation. If you have understood, reply with 'Screen sharing enabled'" }]);
+              // secondaryClient.send([{ text: "Screen sharing has been enabled. You can now use screen data for evaluation. If you have understood, reply with 'Screen sharing enabled'" }]);
             });
           } else {
             // Stop screen sharing and notify Gemini
             screenCaptureStream.stop();
             primaryClient.send([{ text: "Screen sharing has been disabled. Any screen content you might see is from an older session and should be completely ignored. Do not use any screen data for your responses. If you have understood, reply with 'Screen sharing disabled'" }]);
-            secondaryClient.send([{ text: "Screen sharing has been disabled. Any screen content you might see is from an older session and should be completely ignored. Do not use any screen data for your responses. If you have understood, reply with 'Screen sharing disabled'" }]);
+            // secondaryClient.send([{ text: "Screen sharing has been disabled. Any screen content you might see is from an older session and should be completely ignored. Do not use any screen data for your responses. If you have understood, reply with 'Screen sharing disabled'" }]);
           }
           break;
         case 'webcam':
           if (action.value) {
             webcamStream.start();
+            secondaryClient.send([{ text: "WebCam has been enabled. You can now use webcam feed for evaluation. If you have understood, reply with 'WebCam enabled'" }]);
           } else {
             webcamStream.stop();
           }
