@@ -25,6 +25,9 @@ import * as crypto from 'crypto';
 import { electron } from 'process';
 import { uIOhook, UiohookKey, UiohookMouseEvent } from 'uiohook-napi';
 import sharp from 'sharp';
+import { exec } from 'child_process';
+import { promisify } from 'util';
+const execAsync = promisify(exec);
 // import { omniParser } from './omni-parser';
 
 // Set environment variables for the packaged app
@@ -337,6 +340,171 @@ function checkFirstLaunch(machineId: string) {
 ipcMain.handle('check-first-launch', async () => {
   const machineId = await getMachineId();
   return checkFirstLaunch(machineId);
+});
+
+// Add this interface for the window info
+interface ActiveWindowInfo {
+  title: string;
+  application: string;
+  bundleId?: string; // for macOS
+  executablePath?: string; // for Windows
+}
+
+// Add this function to get active window info
+async function getActiveWindowInfo(): Promise<ActiveWindowInfo | null> {
+  try {
+    if (process.platform === 'darwin') {
+      // macOS implementation
+      const script = `
+        tell application "System Events"
+          set frontApp to first application process whose frontmost is true
+          set appName to name of frontApp
+          set windowTitle to ""
+          set bundleId to ""
+          
+          try
+            tell frontApp
+              set windowTitle to name of first window
+            end tell
+          end try
+          
+          try
+            tell frontApp
+              set bundleId to bundle identifier
+            end tell
+          end try
+          
+          return {appName & "," & windowTitle & "," & bundleId}
+        end tell
+      `;
+      
+      try {
+        const { stdout } = await execAsync(`osascript -e '${script}'`);
+        const [appName, windowTitle, bundleId] = stdout.trim().split(',').map(s => s.trim());
+        
+        return {
+          title: windowTitle || '',
+          application: appName || '',
+          bundleId: bundleId || ''
+        };
+      } catch (macError) {
+        logToFile(`Error in macOS window info: ${macError}`);
+        return {
+          title: '',
+          application: '',
+          bundleId: ''
+        };
+      }
+    } else if (process.platform === 'win32') {
+      // Windows implementation using PowerShell
+      const script = `
+        Add-Type @"
+          using System;
+          using System.Runtime.InteropServices;
+          public class Win32 {
+            [DllImport("user32.dll")]
+            public static extern IntPtr GetForegroundWindow();
+            
+            [DllImport("user32.dll")]
+            public static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder text, int count);
+            
+            [DllImport("user32.dll")]
+            public static extern int GetWindowThreadProcessId(IntPtr hWnd, out int processId);
+          }
+"@
+        
+        $hwnd = [Win32]::GetForegroundWindow()
+        $processId = 0
+        [Win32]::GetWindowThreadProcessId($hwnd, [ref]$processId)
+        
+        $process = Get-Process -Id $processId
+        $title = New-Object System.Text.StringBuilder 256
+        [Win32]::GetWindowText($hwnd, $title, 256)
+        
+        @{
+          Title = $title.ToString()
+          Application = $process.ProcessName
+          ExecutablePath = $process.Path
+        } | ConvertTo-Json
+      `;
+
+      try {
+        const { stdout, stderr } = await execAsync('powershell -Command "' + script + '"', {
+          maxBuffer: 1024 * 1024 // Increase buffer size to 1MB
+        });
+        
+        logToFile(`PowerShell stdout: ${stdout}`);
+        if (stderr) logToFile(`PowerShell stderr: ${stderr}`);
+        
+        // Clean and parse the output
+        const cleanOutput = stdout.trim();
+        if (!cleanOutput) {
+          logToFile('PowerShell returned empty output');
+          return {
+            title: '',
+            application: '',
+            executablePath: ''
+          };
+        }
+        
+        try {
+          const result = JSON.parse(cleanOutput);
+          return {
+            title: result.Title || '',
+            application: result.Application || '',
+            executablePath: result.ExecutablePath || ''
+          };
+        } catch (parseError) {
+          logToFile(`Error parsing PowerShell output: ${parseError}`);
+          logToFile(`Raw output: ${cleanOutput}`);
+          return {
+            title: '',
+            application: '',
+            executablePath: ''
+          };
+        }
+      } catch (winError) {
+        logToFile(`Error executing PowerShell command: ${winError}`);
+        return {
+          title: '',
+          application: '',
+          executablePath: ''
+        };
+      }
+    } else {
+      // Linux implementation using xdotool
+      try {
+        const { stdout: windowId } = await execAsync('xdotool getactivewindow');
+        const { stdout: windowName } = await execAsync(`xdotool getwindowname ${windowId}`);
+        const { stdout: windowClass } = await execAsync(`xdotool getwindowclassname ${windowId}`);
+        
+        return {
+          title: windowName.trim(),
+          application: windowClass.trim()
+        };
+      } catch (linuxError) {
+        logToFile(`Error in Linux window info: ${linuxError}`);
+        return {
+          title: '',
+          application: ''
+        };
+      }
+    }
+  } catch (error) {
+    logToFile(`Error getting active window info: ${error}`);
+    return null;
+  }
+}
+
+// Add IPC handler for getting active window info
+ipcMain.handle('get-active-window', async () => {
+  try {
+    const windowInfo = await getActiveWindowInfo();
+    return windowInfo;
+  } catch (error) {
+    logToFile(`Error in get-active-window handler: ${error}`);
+    return null;
+  }
 });
 
 async function createMainWindow() {
@@ -1755,6 +1923,8 @@ async function initializeApp() {
   // Load saved settings first
   console.log('Hello World');
   const savedSettings = loadSettings();
+
+  
 
   // Create windows
   await createMainWindow();

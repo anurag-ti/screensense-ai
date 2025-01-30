@@ -32,6 +32,7 @@ function SubtitlesComponent({
   const lastActionTimeRef = useRef<number>(0);
   const antipatternIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const lastScreenshotRef = useRef<string | null>(null);
+  const lastUserInteractionRef = useRef<number>(Date.now());
 
   useEffect(() => {
     setConfig({
@@ -258,15 +259,48 @@ function SubtitlesComponent({
         // Use opencv service to compare screenshots
         const result = await opencvService.compareImages(screenshot1, screenshot2);
         
-        // Consider it idle if similarity is above 95%
-        return result.similarity > 0.80;
+        // Consider it idle if similarity is above 75%
+        return result.similarity > 0.75;
       } catch (error) {
         console.error('Error comparing screenshots:', error);
         return false;
       }
     }
+    // alternate: paymoapp/active-window -- npm package
+    async function isChromeBrowser(): Promise<boolean> {
+      try {
+        const windowInfo = await ipcRenderer.invoke('get-active-window');
+        if (!windowInfo) return false;
+        
+        // Check for different possible Chrome process names across platforms
+        const chromeIdentifiers = [
+          'chrome',
+          'Google Chrome',
+          'com.google.Chrome', // macOS bundle ID
+          'chrome.exe',
+          'googlechrome'
+        ];
+
+        console.log(windowInfo);
+
+        
+        
+        return chromeIdentifiers.some(id => 
+          windowInfo.application?.toLowerCase().includes(id.toLowerCase()) ||
+          windowInfo.bundleId?.toLowerCase().includes(id.toLowerCase()) ||
+          windowInfo.executablePath?.toLowerCase().includes(id.toLowerCase())
+        );
+      } catch (error) {
+        console.error('Error checking for Chrome browser:', error);
+        return false;
+      }
+    }    
 
     async function checkAntipattern() {
+      const currentTime = Date.now();
+      const timeSinceLastInteraction = currentTime - lastUserInteractionRef.current;
+      const IDLE_THRESHOLD = 10 * 1000; // 10 seconds in milliseconds
+
       if (onScreenshot && onSecondaryScreenshot) {
         const currentScreenshot = onScreenshot();
         const webcamScreenshot = onSecondaryScreenshot();
@@ -318,37 +352,46 @@ function SubtitlesComponent({
 
             const analysisResult = await response.json();
 
+            analysisResult.is_active_screen = 
+            // await isChromeBrowser() && 
+            (timeSinceLastInteraction > IDLE_THRESHOLD);
+
             // Send antipattern logs to separate window
-            if (isIdle && !isUserPresent) {
-              // client.send([{ text: `User is not present and screen is idle` }]);
-              console.log('Antipattern detected: User absent and screen idle');
+            if (isIdle && !isUserPresent && timeSinceLastInteraction > IDLE_THRESHOLD) {
+              console.log('Antipattern detected: User absent, screen idle, and no interaction');
               ipcRenderer.send('antipattern-log', {
                 type: 'warning',
-                message: 'User is not present and screen is idle',
-                analysis: analysisResult
+                message: 'User is not present, screen is idle, and no interaction detected for 10 seconds',
+                analysis: {
+                  ...analysisResult
+                }
               });
-            } else if (isIdle) {
-              // client.send([{ text: `Sitting on idle screen` }]);
-              console.log('Antipattern detected: User has been idle on the same screen');
+            } else if (isIdle && timeSinceLastInteraction > IDLE_THRESHOLD) {
+              console.log('Antipattern detected: User has been idle with no interaction');
               ipcRenderer.send('antipattern-log', {
                 type: 'warning',
-                message: 'User has been idle on the same screen',
-                analysis: analysisResult
+                message: 'User has been idle with no interaction for 10 seconds',
+                analysis: {
+                  ...analysisResult
+                }
               });
             } else if (!isUserPresent) {
-              // client.send([{ text: `User is not present.` }]);
               console.log('Antipattern detected: User not present', analysisResult);
               ipcRenderer.send('antipattern-log', {
                 type: 'warning',
                 message: 'User is not present',
-                analysis: analysisResult
+                analysis: {
+                  ...analysisResult
+                }
               });
             } else {
-              console.log('User is present', analysisResult);
+              console.log('User is present and active', analysisResult);
               ipcRenderer.send('antipattern-log', {
                 type: 'info',
-                message: 'User is present',
-                analysis: analysisResult
+                message: 'User is present and active',
+                analysis: {
+                  ...analysisResult
+                }
               });
             }
             console.log(analysisResult);
@@ -634,6 +677,27 @@ function SubtitlesComponent({
 
     return () => {
       ipcRenderer.removeListener('set-cursor-visibility', handleCursorVisibility);
+    };
+  }, []);
+
+  // Add new effect for tracking user interactions
+  useEffect(() => {
+    const handleUserInteraction = () => {
+      lastUserInteractionRef.current = Date.now();
+    };
+
+    // Add event listeners for mouse and keyboard events
+    window.addEventListener('click', handleUserInteraction);
+    window.addEventListener('keydown', handleUserInteraction);
+    window.addEventListener('mousedown', handleUserInteraction);
+    window.addEventListener('mousemove', handleUserInteraction);
+
+    return () => {
+      // Clean up event listeners
+      window.removeEventListener('click', handleUserInteraction);
+      window.removeEventListener('keydown', handleUserInteraction);
+      window.removeEventListener('mousedown', handleUserInteraction);
+      window.removeEventListener('mousemove', handleUserInteraction);
     };
   }, []);
 
