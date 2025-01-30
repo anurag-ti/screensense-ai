@@ -318,16 +318,38 @@ function SubtitlesComponent({
 
             const analysisResult = await response.json();
 
-            // Log the analysis results along with antipattern detection
+            // Send antipattern logs to separate window
             if (isIdle && !isUserPresent) {
-              client.send([{ text: `User is not present and screen is idle` }]);
+              // client.send([{ text: `User is not present and screen is idle` }]);
               console.log('Antipattern detected: User absent and screen idle');
+              ipcRenderer.send('antipattern-log', {
+                type: 'warning',
+                message: 'User is not present and screen is idle',
+                analysis: analysisResult
+              });
             } else if (isIdle) {
-              client.send([{ text: `Sitting on idle screen` }]);
+              // client.send([{ text: `Sitting on idle screen` }]);
               console.log('Antipattern detected: User has been idle on the same screen');
+              ipcRenderer.send('antipattern-log', {
+                type: 'warning',
+                message: 'User has been idle on the same screen',
+                analysis: analysisResult
+              });
             } else if (!isUserPresent) {
-              client.send([{ text: `User is not present.` }]);
+              // client.send([{ text: `User is not present.` }]);
               console.log('Antipattern detected: User not present', analysisResult);
+              ipcRenderer.send('antipattern-log', {
+                type: 'warning',
+                message: 'User is not present',
+                analysis: analysisResult
+              });
+            } else {
+              console.log('User is present', analysisResult);
+              ipcRenderer.send('antipattern-log', {
+                type: 'info',
+                message: 'User is present',
+                analysis: analysisResult
+              });
             }
             console.log(analysisResult);
           } catch (error) {

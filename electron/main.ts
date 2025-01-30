@@ -274,6 +274,7 @@ let settingsWindow: BrowserWindow | null = null;
 let customSessionName: string | null = null;
 let markerWindow: BrowserWindow | null = null;
 let actionWindow: BrowserWindow | null = null;
+let antipatternWindow: BrowserWindow | null = null;
 
 function logToFile(message: string) {
   const logPath = app.getPath('userData') + '/app.log';
@@ -1759,6 +1760,7 @@ async function initializeApp() {
   await createMainWindow();
   createOverlayWindow();
   createControlWindow();
+  await createAntipatternWindow(); // Add this line
   console.log('App is ready. Listening for global mouse events...');
 
   // Send saved settings to main window
@@ -2869,5 +2871,200 @@ ipcMain.handle('get-screenshot', async () => {
   } catch (error) {
     console.error('Error getting screenshot:', error);
     return null;
+  }
+});
+
+// Add function to create antipattern window
+async function createAntipatternWindow() {
+  console.log('Creating antipattern window');
+  try {
+    if (antipatternWindow && !antipatternWindow.isDestroyed()) {
+      logToFile('Returning existing antipattern window');
+      return antipatternWindow;
+    }
+
+    logToFile('Creating new antipattern window');
+    antipatternWindow = new BrowserWindow({
+      width: 800,
+      height: 600,
+      frame: true,
+      show: false,
+      webPreferences: {
+        nodeIntegration: true,
+        contextIsolation: false,
+      },
+    });
+
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Antipattern Logs</title>
+          <style>
+            body {
+              margin: 0;
+              padding: 20px;
+              background: #1a1a1a;
+              color: #ffffff;
+              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+              overflow-y: auto;
+            }
+            
+            .log-entry {
+              margin-bottom: 16px;
+              padding: 12px;
+              border-radius: 6px;
+              background: #2d2d2d;
+              border-left: 4px solid;
+            }
+            
+            .log-entry.warning {
+              border-left-color: #ffd700;
+            }
+            
+            .log-entry.error {
+              border-left-color: #ff4444;
+            }
+            
+            .timestamp {
+              color: #888;
+              font-size: 12px;
+              margin-bottom: 4px;
+            }
+            
+            .message {
+              margin-bottom: 8px;
+              font-weight: 500;
+            }
+            
+            .analysis {
+              background: #222;
+              padding: 8px;
+              border-radius: 4px;
+              font-family: monospace;
+              font-size: 13px;
+              white-space: pre-wrap;
+            }
+            
+            .clear-button {
+              position: fixed;
+              top: 20px;
+              right: 20px;
+              padding: 8px 16px;
+              background: #2196F3;
+              color: white;
+              border: none;
+              border-radius: 4px;
+              cursor: pointer;
+              font-size: 14px;
+            }
+            
+            .clear-button:hover {
+              background: #1976D2;
+            }
+          </style>
+        </head>
+        <body>
+          <div id="log-container"></div>
+          <button class="clear-button" onclick="clearLogs()">Clear Logs</button>
+          
+          <script>
+            const { ipcRenderer } = require('electron');
+            const logContainer = document.getElementById('log-container');
+            
+            // Add debug logging
+            console.log('Antipattern window loaded');
+            
+            ipcRenderer.on('antipattern-log', (event, data) => {
+              console.log('Received log in renderer:', data);
+              
+              const entry = document.createElement('div');
+              entry.className = 'log-entry ' + (data.type || 'info');
+              
+              const timestamp = document.createElement('div');
+              timestamp.className = 'timestamp';
+              timestamp.textContent = new Date().toLocaleTimeString();
+              
+              const message = document.createElement('div');
+              message.className = 'message';
+              message.textContent = data.message;
+              
+              entry.appendChild(timestamp);
+              entry.appendChild(message);
+              
+              if (data.analysis) {
+                const analysis = document.createElement('pre');
+                analysis.className = 'analysis';
+                analysis.textContent = JSON.stringify(data.analysis, null, 2);
+                entry.appendChild(analysis);
+              }
+              
+              logContainer.insertBefore(entry, logContainer.firstChild);
+            });
+            
+            function clearLogs() {
+              logContainer.innerHTML = '';
+              console.log('Logs cleared');
+            }
+          </script>
+        </body>
+      </html>
+    `;
+
+    logToFile('Loading HTML content into antipattern window');
+    await antipatternWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(htmlContent)}`);
+
+    antipatternWindow.once('ready-to-show', () => {
+      logToFile('Antipattern window ready to show');
+      if (antipatternWindow) {
+        antipatternWindow.show();
+        logToFile('Antipattern window shown');
+      }
+    });
+
+    antipatternWindow.on('closed', () => {
+      logToFile('Antipattern window closed');
+      antipatternWindow = null;
+    });
+
+    return antipatternWindow;
+  } catch (error) {
+    console.error('Error creating antipattern window:', error);
+    logToFile(`Error creating antipattern window: ${error}`);
+    throw error;
+  }
+}
+
+// Make sure to clean up the window when the app closes
+app.on('before-quit', () => {
+  if (antipatternWindow && !antipatternWindow.isDestroyed()) {
+    antipatternWindow.close();
+  }
+});
+
+// Add IPC handler for antipattern logs
+ipcMain.on('antipattern-log', async (event, logData) => {
+  try {
+    logToFile(`Received antipattern log: ${JSON.stringify(logData)}`); // Debug log
+    
+    // Create window if it doesn't exist
+    if (!antipatternWindow || antipatternWindow.isDestroyed()) {
+      await createAntipatternWindow();
+      logToFile('Created new antipattern window'); // Debug log
+    }
+    
+    // Send log to window
+    if (antipatternWindow) {
+      antipatternWindow.webContents.send('antipattern-log', logData);
+      logToFile('Sent log to antipattern window'); // Debug log
+      
+      // Ensure window is visible
+      if (!antipatternWindow.isVisible()) {
+        antipatternWindow.show();
+        logToFile('Showed antipattern window'); // Debug log
+      }
+    }
+  } catch (error) {
+    logToFile(`Error handling antipattern log: ${error}`);
   }
 });
