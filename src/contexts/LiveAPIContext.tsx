@@ -19,6 +19,9 @@ import { useLiveAPI, UseLiveAPIResults } from '../hooks/use-live-api';
 
 const LiveAPIContext = createContext<UseLiveAPIResults | undefined>(undefined);
 
+// Create a second context for the second stream
+const SecondaryLiveAPIContext = createContext<UseLiveAPIResults | undefined>(undefined);
+
 export type LiveAPIProviderProps = {
   children: ReactNode;
   url?: string;
@@ -31,10 +34,24 @@ export const LiveAPIProvider: FC<LiveAPIProviderProps> = ({ url, apiKey, childre
   return <LiveAPIContext.Provider value={liveAPI}>{children}</LiveAPIContext.Provider>;
 };
 
+export const SecondaryLiveAPIProvider: FC<LiveAPIProviderProps> = ({ url, apiKey, children }) => {
+  const liveAPI = useLiveAPI({ url, apiKey });
+
+  return <SecondaryLiveAPIContext.Provider value={liveAPI}>{children}</SecondaryLiveAPIContext.Provider>;
+};
+
 export const useLiveAPIContext = () => {
   const context = useContext(LiveAPIContext);
   if (!context) {
     throw new Error('useLiveAPIContext must be used wihin a LiveAPIProvider');
+  }
+  return context;
+};
+
+export const useSecondaryLiveAPIContext = () => {
+  const context = useContext(SecondaryLiveAPIContext);
+  if (!context) {
+    throw new Error('useSecondaryLiveAPIContext must be used within a SecondaryLiveAPIProvider');
   }
   return context;
 };

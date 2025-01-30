@@ -320,3 +320,21 @@ body {
     }
   }
 }
+
+.video-container {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+
+  .stream {
+    flex: 1;
+    max-width: 50%;
+    height: auto;
+    
+    &.hidden {
+      display: none;
+    }
+  }
+}

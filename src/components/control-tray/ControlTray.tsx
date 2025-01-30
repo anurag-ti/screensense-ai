@@ -26,7 +26,7 @@ import {
   useCallback,
   useMemo,
 } from 'react';
-import { useLiveAPIContext } from '../../contexts/LiveAPIContext';
+import { useLiveAPIContext, useSecondaryLiveAPIContext } from '../../contexts/LiveAPIContext';
 import { UseMediaStreamResult } from '../../hooks/use-media-stream-mux';
 import { useScreenCapture } from '../../hooks/use-screen-capture';
 import { useWebcam } from '../../hooks/use-webcam';
@@ -40,9 +40,11 @@ const { ipcRenderer } = window.require('electron');
 
 export type ControlTrayProps = {
   videoRef: RefObject<HTMLVideoElement>;
+  secondaryVideoRef: RefObject<HTMLVideoElement>;
   children?: ReactNode;
   supportsVideo: boolean;
   onVideoStreamChange?: (stream: MediaStream | null) => void;
+  onSecondaryVideoStreamChange?: (stream: MediaStream | null) => void;
   modes: { value: string }[];
   selectedOption: { value: string };
   setSelectedOption: (option: { value: string }) => void;
@@ -74,8 +76,10 @@ const MediaStreamButton = memo(
 
 function ControlTray({
   videoRef,
+  secondaryVideoRef,
   children,
   onVideoStreamChange = () => { },
+  onSecondaryVideoStreamChange = () => { },
   supportsVideo,
   modes,
   selectedOption,
@@ -83,12 +87,6 @@ function ControlTray({
 }: ControlTrayProps) {
   const webcamStream = useWebcam();
   const screenCaptureStream = useScreenCapture();
-  const videoStreams = useMemo(
-    () => [webcamStream, screenCaptureStream],
-    [webcamStream, screenCaptureStream]
-  );
-  const [activeVideoStream, setActiveVideoStream] = useState<MediaStream | null>(null);
-  const [webcam, screenCapture] = videoStreams;
   const [inVolume, setInVolume] = useState(0);
   const [audioRecorder] = useState(() => new AudioRecorder());
   const [muted, setMuted] = useState(false);
@@ -96,7 +94,14 @@ function ControlTray({
   const [carouselIndex, setCarouselIndex] = useState(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const { client, connected, connect, disconnect, volume } = useLiveAPIContext();
+  const primaryContext = useLiveAPIContext();
+  const secondaryContext = useSecondaryLiveAPIContext();
+  
+  const { client: primaryClient, connected: primaryConnected, connect: connectPrimary, disconnect: disconnectPrimary } = primaryContext;
+  const { client: secondaryClient, connected: secondaryConnected, connect: connectSecondary, disconnect: disconnectSecondary } = secondaryContext;
+
+  // Consider both connections for overall connected state
+  const connected = primaryConnected && secondaryConnected;
 
   useEffect(() => {
     if (!connected && connectButtonRef.current) {
@@ -113,7 +118,14 @@ function ControlTray({
 
   useEffect(() => {
     const onData = (base64: string) => {
-      client.sendRealtimeInput([
+      // Send audio to both clients
+      primaryClient.sendRealtimeInput([
+        {
+          mimeType: 'audio/pcm;rate=16000',
+          data: base64,
+        },
+      ]);
+      secondaryClient.sendRealtimeInput([
         {
           mimeType: 'audio/pcm;rate=16000',
           data: base64,
@@ -128,59 +140,34 @@ function ControlTray({
     return () => {
       audioRecorder.off('data', onData).off('volume', setInVolume);
     };
-  }, [connected, client, muted, audioRecorder]);
+  }, [connected, primaryClient, secondaryClient, muted, audioRecorder]);
 
+  // Handle screen capture stream
   useEffect(() => {
     if (videoRef.current) {
-      videoRef.current.srcObject = activeVideoStream;
+      videoRef.current.srcObject = screenCaptureStream.stream;
     }
-    onVideoStreamChange(activeVideoStream);
-  }, [activeVideoStream, onVideoStreamChange, videoRef]);
+    onVideoStreamChange(screenCaptureStream.stream);
+  }, [screenCaptureStream.stream, onVideoStreamChange, videoRef]);
 
-  //handler for swapping from one video-stream to the next
-  const changeStreams = useCallback(
-    (next?: UseMediaStreamResult) => async () => {
-      if (next) {
-        try {
-          const mediaStream = await next.start();
-          setActiveVideoStream(mediaStream);
-          onVideoStreamChange(mediaStream);
-          // Send success result for screen sharing
-          if (next === screenCapture) {
-            ipcRenderer.send('screen-share-result', true);
-          }
-        } catch (error) {
-          // Handle cancellation by hiding the main window
-          if (error instanceof Error && error.message === 'Selection cancelled') {
-            console.log('Screen selection was cancelled, hiding main window');
-            ipcRenderer.send('hide-main-window');
-          } else {
-            console.error('Error changing streams:', error);
-          }
-          setActiveVideoStream(null);
-          onVideoStreamChange(null);
-          // Send failure result for screen sharing
-          if (next === screenCapture) {
-            ipcRenderer.send('screen-share-result', false);
-          }
-        }
-      } else {
-        setActiveVideoStream(null);
-        onVideoStreamChange(null);
-      }
+  // Handle webcam stream
+  useEffect(() => {
+    if (secondaryVideoRef.current) {
+      secondaryVideoRef.current.srcObject = webcamStream.stream;
+    }
+    onSecondaryVideoStreamChange(webcamStream.stream);
+  }, [webcamStream.stream, onSecondaryVideoStreamChange, secondaryVideoRef]);
 
-      videoStreams.filter(msr => msr !== next).forEach(msr => msr.stop());
-    },
-    [onVideoStreamChange, screenCapture, videoStreams]
-  );
-
-  // Stop all streams and hide subtitles when connection is closed
+  // Stop all streams when connection is closed
   useEffect(() => {
     if (!connected) {
-      changeStreams()();
+      screenCaptureStream.stop();
+      webcamStream.stop();
+      onVideoStreamChange(null);
+      onSecondaryVideoStreamChange(null);
       ipcRenderer.send('remove_subtitles');
     }
-  }, [connected, changeStreams]);
+  }, [connected, screenCaptureStream, webcamStream, onVideoStreamChange, onSecondaryVideoStreamChange]);
 
   useEffect(() => {
     setSelectedOption(modes[carouselIndex]);
@@ -214,30 +201,36 @@ function ControlTray({
 
   // Add an effect to send the initial message when connection is established
   useEffect(() => {
-    if (connected && client) {
+    if (connected) {
       // Send initial system message about screen sharing state
       if (selectedOption.value === 'screen_capture_record') {
-        client.send([{ text: "Say 'Welcome to Screen Sense AI' and then ask the following question to the user: 'Do you want to start recording action?' If he says yes, then invoke the start_recording function. Give user a confirmation message that you have started recording action or not." }]);
+        primaryClient.send([{ text: "Say 'Welcome to Screen Sense AI' and then ask the following question to the user: 'Do you want to start recording action?' If he says yes, then invoke the start_recording function. Give user a confirmation message that you have started recording action or not." }]);
+        secondaryClient.send([{ text: "You are the webcam assistant. Your role is to observe webcam feed" }]);
       }
       else if (selectedOption.value === 'screen_capture_play') {
-        client.send([{ text: "Say 'Welcome to Screen Sense AI' and then ask the following question to the user: 'Do you want to play recorded action?' If he says yes, invoke the run_action function. If he says no, do nothing. Give user a confirmation message that you have started playing recorded action or not ." }]);
+        primaryClient.send([{ text: "Say 'Welcome to Screen Sense AI' and then ask the following question to the user: 'Do you want to play recorded action?' If he says yes, invoke the run_action function. If he says no, do nothing. Give user a confirmation message that you have started playing recorded action or not." }]);
+        secondaryClient.send([{ text: "You are the webcam assistant. Your role is to analyze facial expressions and gestures from the webcam feed." }]);
       }
       else {
-        client.send([{ text: "Screen sharing has been disabled. Any screen content you might see is from an older session and should be completely ignored. Do not use any screen data for your responses. If you have understood, reply with 'Welcome to Screen Sense AI'" }]);
+        primaryClient.send([{ text: "Screen sharing has been disabled. Any screen content you might see is from an older session and should be completely ignored. Do not use any screen data for your responses. If you have understood, reply with 'Welcome to Screen Sense AI'" }]);
+        secondaryClient.send([{ text: "You are the webcam assistant. Your role is to analyze facial expressions and gestures from the webcam feed." }]);
       }
     }
-  }, [connected, client, selectedOption.value]);
+  }, [connected, primaryClient, secondaryClient, selectedOption.value]);
 
   const handleConnect = () => {
     if (!connected) {
       trackEvent('chat_started', {
         assistant_mode: selectedOption.value,
       });
-      connect();
+      // Connect both clients
+      connectPrimary();
+      connectSecondary();
     } else {
-      disconnect();
+      // Disconnect both clients
+      disconnectPrimary();
+      disconnectSecondary();
     }
-
   };
 
   // Handle carousel actions from control window
@@ -262,28 +255,32 @@ function ControlTray({
         case 'screen':
           if (action.value) {
             // Start screen sharing
-            changeStreams(screenCapture)().then(() => {
+            screenCaptureStream.start().then(() => {
               // Send message to Gemini that screen sharing is enabled
-              client.send([{ text: "Screen sharing has been enabled. You can now use screen data for evaluation. If you have understood, reply with 'Screen sharing enabled'" }]);
+              primaryClient.send([{ text: "Screen sharing has been enabled. You can now use screen data for evaluation. If you have understood, reply with 'Screen sharing enabled'" }]);
+              secondaryClient.send([{ text: "Screen sharing has been enabled. You can now use screen data for evaluation. If you have understood, reply with 'Screen sharing enabled'" }]);
             });
           } else {
             // Stop screen sharing and notify Gemini
-            changeStreams()();
-            client.send([{ text: "Screen sharing has been disabled. Any screen content you might see is from an older session and should be completely ignored. Do not use any screen data for your responses. If you have understood, reply with 'Screen sharing disabled'" }]);
+            screenCaptureStream.stop();
+            primaryClient.send([{ text: "Screen sharing has been disabled. Any screen content you might see is from an older session and should be completely ignored. Do not use any screen data for your responses. If you have understood, reply with 'Screen sharing disabled'" }]);
+            secondaryClient.send([{ text: "Screen sharing has been disabled. Any screen content you might see is from an older session and should be completely ignored. Do not use any screen data for your responses. If you have understood, reply with 'Screen sharing disabled'" }]);
           }
           break;
         case 'webcam':
           if (action.value) {
-            changeStreams(webcam)();
+            webcamStream.start();
           } else {
-            changeStreams()();
+            webcamStream.stop();
           }
           break;
         case 'connect':
           if (action.value) {
-            connect();
+            connectPrimary();
+            connectSecondary();
           } else {
-            disconnect();
+            disconnectPrimary();
+            disconnectSecondary();
           }
           break;
       }
@@ -293,34 +290,35 @@ function ControlTray({
     return () => {
       ipcRenderer.removeListener('control-action', handleControlAction);
     };
-  }, [connect, disconnect, webcam, screenCapture, changeStreams, client]);
+  }, [screenCaptureStream, webcamStream, primaryClient, secondaryClient, connectPrimary, connectSecondary, disconnectPrimary, disconnectSecondary]);
 
   // Send state updates to video window
   useEffect(() => {
     ipcRenderer.send('update-control-state', {
       isMuted: muted,
-      isScreenSharing: screenCapture.isStreaming,
-      isWebcamOn: webcam.isStreaming,
+      isScreenSharing: screenCaptureStream.isStreaming,
+      isWebcamOn: webcamStream.isStreaming,
       isConnected: connected,
     });
 
     // Show/hide main window based on active streams
-    if (screenCapture.isStreaming || webcam.isStreaming) {
+    if (screenCaptureStream.isStreaming || webcamStream.isStreaming) {
       ipcRenderer.send('show-main-window');
     } else {
       ipcRenderer.send('hide-main-window');
     }
-  }, [muted, screenCapture.isStreaming, webcam.isStreaming, connected]);
+  }, [muted, screenCaptureStream.isStreaming, webcamStream.isStreaming, connected]);
 
   // Add effect to handle stopping streams when switching modes
   useEffect(() => {
     if (!assistantConfigs[selectedOption.value as keyof typeof assistantConfigs].requiresDisplay) {
-      if (screenCapture.isStreaming || webcam.isStreaming) {
-        changeStreams()();
+      if (screenCaptureStream.isStreaming || webcamStream.isStreaming) {
+        screenCaptureStream.stop();
+        webcamStream.stop();
         ipcRenderer.send('hide-main-window');
       }
     }
-  }, [selectedOption.value, screenCapture.isStreaming, webcam.isStreaming, changeStreams]);
+  }, [selectedOption.value, screenCaptureStream.isStreaming, webcamStream.isStreaming]);
 
   useEffect(() => {
     // Listen for error messages from main process
@@ -338,38 +336,41 @@ function ControlTray({
       <section className="control-tray">
         <div className="control-tray-container">
           <nav className={cn('actions-nav', { disabled: !connected })}>
-            <button className={cn('action-button mic-button')} onClick={() => setMuted(!muted)}>
-              {!muted ? (
-                <span className="material-symbols-outlined filled">mic</span>
-              ) : (
-                <span className="material-symbols-outlined filled">mic_off</span>
-              )}
+            {supportsVideo && (
+              <>
+                <MediaStreamButton
+                  isStreaming={screenCaptureStream.isStreaming}
+                  onIcon="stop_screen_share"
+                  offIcon="screen_share"
+                  start={screenCaptureStream.start}
+                  stop={screenCaptureStream.stop}
+                />
+                <MediaStreamButton
+                  isStreaming={webcamStream.isStreaming}
+                  onIcon="videocam_off"
+                  offIcon="videocam"
+                  start={webcamStream.start}
+                  stop={webcamStream.stop}
+                />
+              </>
+            )}
+            <button
+              className={cn('action-button', { active: !muted })}
+              onClick={() => setMuted(!muted)}
+            >
+              <span className="material-symbols-outlined">
+                {muted ? 'mic_off' : 'mic'}
+              </span>
             </button>
-
-            <div className="action-button no-action outlined">
-              <AudioPulse volume={volume} active={connected} hover={false} />
-            </div>
-
-            {supportsVideo &&
-              assistantConfigs[selectedOption.value as keyof typeof assistantConfigs]
-                .requiresDisplay && (
-                <>
-                  <MediaStreamButton
-                    isStreaming={screenCapture.isStreaming}
-                    start={changeStreams(screenCapture)}
-                    stop={changeStreams()}
-                    onIcon="cancel_presentation"
-                    offIcon="present_to_all"
-                  />
-                  <MediaStreamButton
-                    isStreaming={webcam.isStreaming}
-                    start={changeStreams(webcam)}
-                    stop={changeStreams()}
-                    onIcon="videocam_off"
-                    offIcon="videocam"
-                  />
-                </>
-              )}
+            <button
+              ref={connectButtonRef}
+              className={cn('action-button', { active: connected })}
+              onClick={handleConnect}
+            >
+              <span className="material-symbols-outlined">
+                {connected ? 'close' : 'chat'}
+              </span>
+            </button>
             {children}
           </nav>
 

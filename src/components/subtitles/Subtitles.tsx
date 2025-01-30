@@ -1,6 +1,6 @@
 import { type Tool } from '@google/generative-ai';
 import { useEffect, useState, useRef, memo } from 'react';
-import { useLiveAPIContext } from '../../contexts/LiveAPIContext';
+import { useLiveAPIContext, useSecondaryLiveAPIContext } from '../../contexts/LiveAPIContext';
 import { ToolCall } from '../../multimodal-live-types';
 import vegaEmbed from 'vega-embed';
 import { trackEvent } from '../../shared/analytics';
@@ -13,6 +13,7 @@ interface SubtitlesProps {
   systemInstruction: string;
   assistantMode: string;
   onScreenshot?: () => string | null;
+  onSecondaryScreenshot?: () => string | null;
 }
 let play_action = true; 
 // Default tool configuration
@@ -21,10 +22,12 @@ function SubtitlesComponent({
   systemInstruction,
   assistantMode,
   onScreenshot,
+  onSecondaryScreenshot,
 }: SubtitlesProps) {
   const [subtitles, setSubtitles] = useState<string>('');
   const [graphJson, setGraphJson] = useState<string>('');
   const { client, setConfig } = useLiveAPIContext();
+  const { client: secondaryClient, setConfig: secondarySetConfig } = useSecondaryLiveAPIContext();
   const graphRef = useRef<HTMLDivElement>(null);
   const lastActionTimeRef = useRef<number>(0);
   const antipatternIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -264,47 +267,35 @@ function SubtitlesComponent({
     }
 
     async function checkAntipattern() {
-      if (onScreenshot) {
-        const currentScreenshot = onScreenshot();        
-        const video = document.querySelector('video');
+      if (onScreenshot && onSecondaryScreenshot) {
+        const currentScreenshot = onScreenshot();
+        const webcamScreenshot = onSecondaryScreenshot();
         
         // Check for idle screen
         if (currentScreenshot && lastScreenshotRef.current) {
           const isIdle = await compareScreenshots(currentScreenshot, lastScreenshotRef.current);
           
-          // Check for user presence if video element exists
+          // Check for user presence using webcam screenshot
           let isUserPresent = true;
-          if (video) {
-            // Create a temporary canvas to analyze video frame
-            const canvas = document.createElement('canvas');
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            const ctx = canvas.getContext('2d');
-            
-            if (ctx) {
-              // Draw current video frame to canvas
-              ctx.drawImage(video, 0, 0);
-              const videoFrame = canvas.toDataURL('image/jpeg');
+          if (webcamScreenshot) {
+            // Call server API for face detection
+            try {
+              const response = await fetch('http://localhost:5000/detect-face', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ image: webcamScreenshot }),
+              });
               
-              // Call server API for face detection
-              try {
-                const response = await fetch('http://localhost:5000/detect-face', {
-                  method: 'POST',
-                  headers: {
-                    'Content-Type': 'application/json',
-                  },
-                  body: JSON.stringify({ image: videoFrame }),
-                });
-                
-                if (!response.ok) {
-                  throw new Error('Face detection request failed');
-                }
-                
-                const result = await response.json();
-                isUserPresent = result.faceDetected;
-              } catch (error) {
-                console.error('Error detecting user presence:', error);
+              if (!response.ok) {
+                throw new Error('Face detection request failed');
               }
+              
+              const result = await response.json();
+              isUserPresent = result.faceDetected;
+            } catch (error) {
+              console.error('Error detecting user presence:', error);
             }
           }
 
@@ -320,20 +311,20 @@ function SubtitlesComponent({
                 prompt: "Analyze this screenshot and identify: 1) The application or software being used 2) The course name if visible 3) The subject matter or topic being studied. Return the results in JSON format with keys: app_name, course_name, subject"
               }),
             });
-
+            
             if (!response.ok) {
               throw new Error('Screenshot analysis failed');
             }
 
             const analysisResult = await response.json();
-            
+
             // Log the analysis results along with antipattern detection
             if (isIdle && !isUserPresent) {
-            client.send([{ text: `User is not present and screen is idle` }]);
-            console.log('Antipattern detected: User absent and screen idle');
+              client.send([{ text: `User is not present and screen is idle` }]);
+              console.log('Antipattern detected: User absent and screen idle');
             } else if (isIdle) {
-            client.send([{ text: `Sitting on idle screen` }]);
-            console.log('Antipattern detected: User has been idle on the same screen');
+              client.send([{ text: `Sitting on idle screen` }]);
+              console.log('Antipattern detected: User has been idle on the same screen');
             } else if (!isUserPresent) {
               client.send([{ text: `User is not present.` }]);
               console.log('Antipattern detected: User not present', analysisResult);

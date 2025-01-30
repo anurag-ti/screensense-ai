@@ -1,6 +1,6 @@
 import { useRef, useState, useEffect, useCallback, useImperativeHandle, forwardRef } from 'react';
 import './App.scss';
-import { LiveAPIProvider, useLiveAPIContext } from './contexts/LiveAPIContext';
+import { LiveAPIProvider, useLiveAPIContext, SecondaryLiveAPIProvider, useSecondaryLiveAPIContext } from './contexts/LiveAPIContext';
 // import SidePanel from "./components/side-panel/SidePanel";
 import { Subtitles } from './components/subtitles/Subtitles';
 import ControlTray from './components/control-tray/ControlTray';
@@ -27,10 +27,23 @@ export interface VideoCanvasHandle {
 
 const VideoCanvas = forwardRef<
   VideoCanvasHandle,
-  { videoRef: React.RefObject<HTMLVideoElement>; videoStream: MediaStream | null }
->(({ videoRef, videoStream }, ref) => {
+  { 
+    videoRef: React.RefObject<HTMLVideoElement>; 
+    videoStream: MediaStream | null;
+    contextType?: 'primary' | 'secondary';
+  }
+>(({ videoRef, videoStream, contextType = 'primary' }, ref) => {
   const renderCanvasRef = useRef<HTMLCanvasElement>(null);
-  const { client, connected } = useLiveAPIContext();
+  const primaryContext = useLiveAPIContext();
+  const secondaryContext = useSecondaryLiveAPIContext();
+  
+  // Each context maintains its own connection state and client
+  const { client: primaryClient, connected: primaryConnected } = primaryContext;
+  const { client: secondaryClient, connected: secondaryConnected } = secondaryContext;
+
+  // Use the appropriate client and connection state based on context type
+  const client = contextType === 'primary' ? primaryClient : secondaryClient;
+  const connected = contextType === 'primary' ? primaryConnected : secondaryConnected;
 
   // Add method to capture screenshot
   const captureScreenshot = useCallback(() => {
@@ -93,9 +106,12 @@ const VideoCanvas = forwardRef<
 });
 
 function App() {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const videoCanvasRef = useRef<VideoCanvasHandle>(null);
-  const [videoStream, setVideoStream] = useState<MediaStream | null>(null);
+  const primaryVideoRef = useRef<HTMLVideoElement>(null);
+  const secondaryVideoRef = useRef<HTMLVideoElement>(null);
+  const primaryVideoCanvasRef = useRef<VideoCanvasHandle>(null);
+  const secondaryVideoCanvasRef = useRef<VideoCanvasHandle>(null);
+  const [primaryVideoStream, setPrimaryVideoStream] = useState<MediaStream | null>(null);
+  const [secondaryVideoStream, setSecondaryVideoStream] = useState<MediaStream | null>(null);
   const [geminiApiKey, setGeminiApiKey] = useState<string>('');
   const [selectedOption, setSelectedOption] = useState<ModeOption>(modes[0]);
 
@@ -191,63 +207,93 @@ function App() {
   }, [selectedOption]);
 
   const handleScreenshot = useCallback(() => {
-    return videoCanvasRef.current?.captureScreenshot() || null;
+    return primaryVideoCanvasRef.current?.captureScreenshot() || null;
+  }, []);
+
+  const handleSecondaryScreenshot = useCallback(() => {
+    return secondaryVideoCanvasRef.current?.captureScreenshot() || null;
   }, []);
 
   return (
     <div className="App">
       <LiveAPIProvider url={uri} apiKey={geminiApiKey}>
-        <div className="streaming-console">
-          <VideoCanvas ref={videoCanvasRef} videoRef={videoRef} videoStream={videoStream} />
-          <button
-            className="action-button settings-button"
-            onClick={() => {
-              ipcRenderer.send('show-settings');
-            }}
-            title="Settings"
-          >
-            <span className="material-symbols-outlined">settings</span>
-          </button>
+        <SecondaryLiveAPIProvider url={uri} apiKey={geminiApiKey}>
+          <div className="streaming-console">
+            <VideoCanvas 
+              ref={primaryVideoCanvasRef} 
+              videoRef={primaryVideoRef} 
+              videoStream={primaryVideoStream}
+              contextType="primary"
+            />
+            <VideoCanvas 
+              ref={secondaryVideoCanvasRef} 
+              videoRef={secondaryVideoRef} 
+              videoStream={secondaryVideoStream}
+              contextType="secondary"
+            />
+            <button
+              className="action-button settings-button"
+              onClick={() => {
+                ipcRenderer.send('show-settings');
+              }}
+              title="Settings"
+            >
+              <span className="material-symbols-outlined">settings</span>
+            </button>
 
-          <main>
-            <div className="main-app-area">
-              <Subtitles
-                tools={[
-                  ...assistantConfigs[selectedOption.value as keyof typeof assistantConfigs].tools,
-                ]}
-                systemInstruction={
-                  assistantConfigs[selectedOption.value as keyof typeof assistantConfigs]
-                    .systemInstruction
-                }
-                assistantMode={selectedOption.value}
-                onScreenshot={handleScreenshot}
-              />
-              <video
-                className={cn('stream', {
-                  hidden: !videoRef.current || !videoStream,
-                })}
-                ref={videoRef}
-                autoPlay
-                playsInline
-              />
-            </div>
+            <main>
+              <div className="main-app-area">
+                <Subtitles
+                  tools={[
+                    ...assistantConfigs[selectedOption.value as keyof typeof assistantConfigs].tools,
+                  ]}
+                  systemInstruction={
+                    assistantConfigs[selectedOption.value as keyof typeof assistantConfigs]
+                      .systemInstruction
+                  }
+                  assistantMode={selectedOption.value}
+                  onScreenshot={handleScreenshot}
+                  onSecondaryScreenshot={handleSecondaryScreenshot}
+                />
+                <div className="video-container">
+                  <video
+                    className={cn('stream', {
+                      hidden: !primaryVideoRef.current || !primaryVideoStream,
+                    })}
+                    ref={primaryVideoRef}
+                    autoPlay
+                    playsInline
+                  />
+                  <video
+                    className={cn('stream', {
+                      hidden: !secondaryVideoRef.current || !secondaryVideoStream,
+                    })}
+                    ref={secondaryVideoRef}
+                    autoPlay
+                    playsInline
+                  />
+                </div>
+              </div>
 
-            <div style={{ display: 'none' }}>
-              <ControlTray
-                videoRef={videoRef}
-                supportsVideo={true}
-                onVideoStreamChange={setVideoStream}
-                modes={modes}
-                selectedOption={selectedOption}
-                setSelectedOption={(option: { value: string }) =>
-                  setSelectedOption(option as ModeOption)
-                }
-              >
-                {/* put your own buttons here */}
-              </ControlTray>
-            </div>
-          </main>
-        </div>
+              <div style={{ display: 'none' }}>
+                <ControlTray
+                  videoRef={primaryVideoRef}
+                  secondaryVideoRef={secondaryVideoRef}
+                  supportsVideo={true}
+                  onVideoStreamChange={setPrimaryVideoStream}
+                  onSecondaryVideoStreamChange={setSecondaryVideoStream}
+                  modes={modes}
+                  selectedOption={selectedOption}
+                  setSelectedOption={(option: { value: string }) =>
+                    setSelectedOption(option as ModeOption)
+                  }
+                >
+                  {/* put your own buttons here */}
+                </ControlTray>
+              </div>
+            </main>
+          </div>
+        </SecondaryLiveAPIProvider>
       </LiveAPIProvider>
     </div>
   );
