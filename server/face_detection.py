@@ -81,7 +81,6 @@ def compare_screenshots():
                                     "course_name": string,
                                     "subject": string,
                                     "is_active_learning_screen": boolean,
-                                    "is_idle": boolean,
                                     "explanation": string,
                                     "current_time": string
                                 }
@@ -92,10 +91,7 @@ def compare_screenshots():
                                 - app_name: name of the application or software or website for learning being used otherwise null
                                 - course_name: name of the course if visible otherwise null
                                 - subject: subject matter or topic being studied otherwise null
-
-                                - is_active_learning_screen: true if the screenshot is from a learning platform's active session like quiz, assignment, video etc. Non-active screens include dashboard, login, test results page, summary, test selection page etc.
-
-                                - is_idle: true if the screenshot is from a idle screen or is non-learning platform
+                                - is_active_learning_screen: true if the screenshot is from a learning platform's active session like quiz, assignment, video etc. Non-active screens include dashboard, login, test results page, summary, test selection page , any page of non-learning platform etc.
                                 - explanation: brief description of what changed
                                 - current_time: Return the provided current time""",
 

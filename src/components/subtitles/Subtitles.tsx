@@ -33,6 +33,7 @@ function SubtitlesComponent({
   const antipatternIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const lastScreenshotRef = useRef<string | null>(null);
   const lastUserInteractionRef = useRef<number>(Date.now());
+  const lastScreenChangeRef = useRef<number>(Date.now());
 
   useEffect(() => {
     setConfig({
@@ -316,7 +317,11 @@ function SubtitlesComponent({
         // Check for idle screen
         if (currentScreenshot && lastScreenshotRef.current) {
           const isIdle = await compareScreenshots(currentScreenshot, lastScreenshotRef.current);
+          if (!isIdle) {
+            lastScreenChangeRef.current = Date.now();
+          }
           
+
           // Check for user presence using webcam screenshot
           let isUserPresent = true;
           if (webcamScreenshot) {
@@ -364,10 +369,11 @@ function SubtitlesComponent({
             // (timeSinceLastInteraction > IDLE_THRESHOLD);
 
             analysisResult.is_user_present = isUserPresent;
+            analysisResult.screen_idle_time = lastScreenChangeRef.current ? currentTime - lastScreenChangeRef.current : 0;
 
             // Send antipattern logs to separate window
             if (!isUserPresent) {
-              analysisResult.idle_behavior = isUserPresent;
+              analysisResult.idle_behavior = true;
               console.log('Antipattern detected: User absent');
               ipcRenderer.send('antipattern-log', {
                 type: 'warning',
@@ -377,8 +383,10 @@ function SubtitlesComponent({
                   ...analysisResult
                 }
               });
-            } else if (isIdle || timeSinceLastInteraction > IDLE_THRESHOLD) {
-              analysisResult.idle_behavior = isIdle && timeSinceLastInteraction > IDLE_THRESHOLD;
+            } else if (
+              // isIdle || 
+              timeSinceLastInteraction > IDLE_THRESHOLD) {
+              analysisResult.idle_behavior = true;
               console.log('Antipattern detected: User has been idle with no interaction');
               ipcRenderer.send('antipattern-log', {
                 type: 'warning',
