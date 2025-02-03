@@ -300,6 +300,7 @@ function SubtitlesComponent({
       if (antipatternIntervalRef.current === null) {
         return;
       }
+      lastUserInteractionRef.current = Date.now();
       await checkAntipattern();
     });
 
@@ -349,7 +350,7 @@ function SubtitlesComponent({
               },
               body: JSON.stringify({ 
                 image: currentScreenshot,
-                prompt: "Analyze the screenshot and identify: 1) The application or software being used 2) The course name if visible 3) The subject matter or topic being studied. 4) Is active screen of application or not. Return the results in JSON format with keys: app_name, course_name, subject, is_active_screen.  Use null value if you are not able to identify any of the above. Examples of non-active screen inlcude dashboard page, login page, test results page etc. Active screen for an app is something like an assignment page, quiz page, video page for a course etc. "
+                current_time: currentTime,
               }),
             });
             
@@ -358,46 +359,38 @@ function SubtitlesComponent({
             }
 
             const analysisResult = await response.json();
-
-            analysisResult.is_active_screen = 
-            await isChromeBrowser() && 
-            (timeSinceLastInteraction > IDLE_THRESHOLD);
+            // analysisResult.is_active_screen = 
+            // await isChromeBrowser() && 
+            // (timeSinceLastInteraction > IDLE_THRESHOLD);
 
             analysisResult.is_user_present = isUserPresent;
 
             // Send antipattern logs to separate window
-            if (isIdle && !isUserPresent && timeSinceLastInteraction > IDLE_THRESHOLD) {
-              analysisResult.is_active_screen = false;
-              console.log('Antipattern detected: User absent, screen idle, and no interaction');
+            if (!isUserPresent) {
+              analysisResult.idle_behavior = isUserPresent;
+              console.log('Antipattern detected: User absent');
               ipcRenderer.send('antipattern-log', {
                 type: 'warning',
-                message: 'User is not present, screen is idle, and no interaction detected for 10 seconds',
-                analysis: {
-                  ...analysisResult
-                }
-              });
-            } else if (isIdle && timeSinceLastInteraction > IDLE_THRESHOLD) {
-              analysisResult.is_active_screen = false;
-              console.log('Antipattern detected: User has been idle with no interaction');
-              ipcRenderer.send('antipattern-log', {
-                type: 'warning',
-                message: 'User has been idle with no interaction for 10 seconds',
-                analysis: {
-                  ...analysisResult
-                }
-              });
-            } else if (!isUserPresent) {
-              analysisResult.is_active_screen = true;
-              console.log('Antipattern detected: User not present', analysisResult);
-              ipcRenderer.send('antipattern-log', {
-                type: 'warning',
+
                 message: 'User is not present',
                 analysis: {
                   ...analysisResult
                 }
               });
+            } else if (isIdle || timeSinceLastInteraction > IDLE_THRESHOLD) {
+              analysisResult.idle_behavior = isIdle && timeSinceLastInteraction > IDLE_THRESHOLD;
+              console.log('Antipattern detected: User has been idle with no interaction');
+              ipcRenderer.send('antipattern-log', {
+                type: 'warning',
+
+                message: 'User is present but no interaction has been detected',
+                analysis: {
+                  ...analysisResult
+                }
+
+              });
             } else {
-              analysisResult.is_active_screen = true;
+              analysisResult.idle_behavior = false;
               console.log('User is present and active', analysisResult);
               ipcRenderer.send('antipattern-log', {
                 type: 'info',
@@ -690,27 +683,6 @@ function SubtitlesComponent({
 
     return () => {
       ipcRenderer.removeListener('set-cursor-visibility', handleCursorVisibility);
-    };
-  }, []);
-
-  // Add new effect for tracking user interactions
-  useEffect(() => {
-    const handleUserInteraction = () => {
-      lastUserInteractionRef.current = Date.now();
-    };
-
-    // Add event listeners for mouse and keyboard events
-    window.addEventListener('click', handleUserInteraction);
-    window.addEventListener('keydown', handleUserInteraction);
-    window.addEventListener('mousedown', handleUserInteraction);
-    window.addEventListener('mousemove', handleUserInteraction);
-
-    return () => {
-      // Clean up event listeners
-      window.removeEventListener('click', handleUserInteraction);
-      window.removeEventListener('keydown', handleUserInteraction);
-      window.removeEventListener('mousedown', handleUserInteraction);
-      window.removeEventListener('mousemove', handleUserInteraction);
     };
   }, []);
 

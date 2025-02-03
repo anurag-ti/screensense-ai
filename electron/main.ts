@@ -3235,7 +3235,7 @@ ipcMain.on('antipattern-log', async (event, logData) => {
     
     // Send log to window
     if (antipatternWindow) {
-      antipatternWindow.webContents.send('antipattern-log', logData.analysis);
+      antipatternWindow.webContents.send('antipattern-log', logData);
       logToFile('Sent log to antipattern window'); // Debug log
       
       // Ensure window is visible
