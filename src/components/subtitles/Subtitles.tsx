@@ -294,7 +294,14 @@ function SubtitlesComponent({
         console.error('Error checking for Chrome browser:', error);
         return false;
       }
-    }    
+    }  
+    
+    ipcRenderer.on('take-screenshot', async () => {
+      if (antipatternIntervalRef.current === null) {
+        return;
+      }
+      await checkAntipattern();
+    });
 
     async function checkAntipattern() {
       const currentTime = Date.now();
@@ -353,11 +360,14 @@ function SubtitlesComponent({
             const analysisResult = await response.json();
 
             analysisResult.is_active_screen = 
-            // await isChromeBrowser() && 
+            await isChromeBrowser() && 
             (timeSinceLastInteraction > IDLE_THRESHOLD);
+
+            analysisResult.is_user_present = isUserPresent;
 
             // Send antipattern logs to separate window
             if (isIdle && !isUserPresent && timeSinceLastInteraction > IDLE_THRESHOLD) {
+              analysisResult.is_active_screen = false;
               console.log('Antipattern detected: User absent, screen idle, and no interaction');
               ipcRenderer.send('antipattern-log', {
                 type: 'warning',
@@ -367,6 +377,7 @@ function SubtitlesComponent({
                 }
               });
             } else if (isIdle && timeSinceLastInteraction > IDLE_THRESHOLD) {
+              analysisResult.is_active_screen = false;
               console.log('Antipattern detected: User has been idle with no interaction');
               ipcRenderer.send('antipattern-log', {
                 type: 'warning',
@@ -376,6 +387,7 @@ function SubtitlesComponent({
                 }
               });
             } else if (!isUserPresent) {
+              analysisResult.is_active_screen = true;
               console.log('Antipattern detected: User not present', analysisResult);
               ipcRenderer.send('antipattern-log', {
                 type: 'warning',
@@ -385,6 +397,7 @@ function SubtitlesComponent({
                 }
               });
             } else {
+              analysisResult.is_active_screen = true;
               console.log('User is present and active', analysisResult);
               ipcRenderer.send('antipattern-log', {
                 type: 'info',

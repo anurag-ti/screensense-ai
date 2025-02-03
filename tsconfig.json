@@ -16,10 +16,11 @@
     "noEmit": true,
     "jsx": "react-jsx"
   },
-  "include": ["src", "src/**/*"],
+  "include": ["src", "src/**/*", "electron/**/*", "electron/types.d.ts"],
   "ts-node": {
     "compilerOptions": {
-      "module": "commonjs"
+      "module": "commonjs",
+      "typeRoots": ["./node_modules/@types", "./src", "./electron", "./electron/types.d.ts"]
     }
   }
 }

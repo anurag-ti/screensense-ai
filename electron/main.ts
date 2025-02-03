@@ -9,6 +9,9 @@ import {
   screen as electron_screen,
   session,
 } from 'electron';
+// import * as ffi from 'ffi-napi';
+// import * as ref from 'ref-napi';
+// import * as wchar from 'ref-wchar-napi';
 import * as path from 'path';
 import * as fs from 'fs';
 import {
@@ -23,7 +26,7 @@ import {
 import { execSync } from 'child_process';
 import * as crypto from 'crypto';
 import { electron } from 'process';
-import { uIOhook, UiohookKey, UiohookMouseEvent } from 'uiohook-napi';
+import { EventType, uIOhook, UiohookKey, UiohookKeyboardEvent, UiohookMouseEvent, UiohookWheelEvent } from 'uiohook-napi';
 import sharp from 'sharp';
 import { exec } from 'child_process';
 import { promisify } from 'util';
@@ -156,117 +159,114 @@ ipcMain.on('stop-capture-screen', () => {
   }
 });
 
-// Initialize global event listener
-uIOhook.on('mousedown', async (e: UiohookMouseEvent) => {
-  // Only process clicks if recording is active and we have a screenshot
-  if (!isRecording || !latestScreenshot) return;
+// // Initialize global event listener
+// uIOhook.on('mousedown', async (e: UiohookMouseEvent) => {
+//   // Only process clicks if recording is active and we have a screenshot
+//   if (!isRecording || !latestScreenshot) return;
 
-  try {
-    // Calculate time since last click
-    const currentTime = Date.now();
-    const timeSinceLastClick = lastClickTime ? currentTime - lastClickTime : 0;
-    lastClickTime = currentTime;
+//   try {
+//     // Calculate time since last click
+//     const currentTime = Date.now();
+//     const timeSinceLastClick = lastClickTime ? currentTime - lastClickTime : 0;
+//     lastClickTime = currentTime;
 
-    const primaryDisplay = electron_screen.getPrimaryDisplay();
-    const { bounds } = primaryDisplay;
-    const cursorPos = electron_screen.getCursorScreenPoint();
+//     const primaryDisplay = electron_screen.getPrimaryDisplay();
+//     const { bounds } = primaryDisplay;
+//     const cursorPos = electron_screen.getCursorScreenPoint();
 
-    // Get the actual screen dimensions
-    const actualWidth = bounds.width;
-    const actualHeight = bounds.height;
+//     // Get the actual screen dimensions
+//     const actualWidth = bounds.width;
+//     const actualHeight = bounds.height;
 
-    // Calculate scaling factors
-    const scaleX = 1920 / actualWidth;
-    const scaleY = 1080 / actualHeight;
+//     // Calculate scaling factors
+//     const scaleX = 1920 / actualWidth;
+//     const scaleY = 1080 / actualHeight;
 
-    // Scale cursor position to 1920x1080 space
-    const scaledX = Math.round(cursorPos.x * scaleX);
-    const scaledY = Math.round(cursorPos.y * scaleY);
+//     // Scale cursor position to 1920x1080 space
+//     const scaledX = Math.round(cursorPos.x * scaleX);
+//     const scaledY = Math.round(cursorPos.y * scaleY);
 
-    const ImageX = scaledX + 100;
-    const ImageY = scaledY + 100;
+//     const ImageX = scaledX + 100;
+//     const ImageY = scaledY + 100;
 
-    // Calculate crop area (100x100 pixels centered on click)
-    const cropSize = 100;
-    const halfSize = cropSize / 2;
+//     // Calculate crop area (100x100 pixels centered on click)
+//     const cropSize = 100;
+//     const halfSize = cropSize / 2;
 
-    // Calculate crop bounds, ensuring we stay within image boundaries
-    const cropX = Math.max(0, Math.min(2020, ImageX - halfSize));
-    const cropY = Math.max(0, Math.min(1180, ImageY - halfSize));
+//     // Calculate crop bounds, ensuring we stay within image boundaries
+//     const cropX = Math.max(0, Math.min(2020, ImageX - halfSize));
+//     const cropY = Math.max(0, Math.min(1180, ImageY - halfSize));
 
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const cropped_images_dir = path.join(
-      app.getPath('appData'),
-      'screensense-ai',
-      'actions',
-      'action'
-    );
-    if (!fs.existsSync(cropped_images_dir)) {
-      fs.mkdirSync(cropped_images_dir, { recursive: true });
-    }
-    const cropPath = path.join(cropped_images_dir, `cropped-${timestamp}.png`);
-    const originalPath = path.join(cropped_images_dir, `original-${timestamp}.png`);
+//     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+//     const cropped_images_dir = path.join(
+//       app.getPath('appData'),
+//       'screensense-ai',
+//       'actions',
+//       'action'
+//     );
+//     if (!fs.existsSync(cropped_images_dir)) {
+//       fs.mkdirSync(cropped_images_dir, { recursive: true });
+//     }
+//     const cropPath = path.join(cropped_images_dir, `cropped-${timestamp}.png`);
+//     const originalPath = path.join(cropped_images_dir, `original-${timestamp}.png`);
 
-    await fs.promises.copyFile(latestScreenshot.path, originalPath);
+//     await fs.promises.copyFile(latestScreenshot.path, originalPath);
 
-    // First add blue border to the original screenshot
-    await sharp(originalPath)
-      .extend({
-        top: 100,
-        bottom: 100,
-        left: 100,
-        right: 100,
-        background: { r: 0, g: 0, b: 0, alpha: 1 },
-      })
-      .toBuffer()
-      .then(async buffer => {
-        // Write the bordered image
-        await fs.promises.writeFile(originalPath, buffer);
+//     // First add blue border to the original screenshot
+//     await sharp(originalPath)
+//       .extend({
+//         top: 100,
+//         bottom: 100,
+//         left: 100,
+//         right: 100,
+//         background: { r: 0, g: 0, b: 0, alpha: 1 },
+//       })
+//       .toBuffer()
+//       .then(async buffer => {
+//         // Write the bordered image
+//         await fs.promises.writeFile(originalPath, buffer);
 
-        // Then crop from the bordered image
-        await sharp(originalPath)
-          .extract({
-            left: cropX,
-            top: cropY,
-            width: cropSize,
-            height: cropSize,
-          })
-          .toFile(cropPath);
-      });
+//         // Then crop from the bordered image
+//         await sharp(originalPath)
+//           .extract({
+//             left: cropX,
+//             top: cropY,
+//             width: cropSize,
+//             height: cropSize,
+//           })
+//           .toFile(cropPath);
+//       });
 
-    console.log(`Click area saved to: ${cropPath}`);
-    console.log(`Original screenshot saved to: ${originalPath}`);
+//     console.log(`Click area saved to: ${cropPath}`);
+//     console.log(`Original screenshot saved to: ${originalPath}`);
 
-    const sessionName = 'action';
-    if (!conversations_screenshots[sessionName]) {
-      conversations_screenshots[sessionName] = [];
-    }
+//     const sessionName = 'action';
+//     if (!conversations_screenshots[sessionName]) {
+//       conversations_screenshots[sessionName] = [];
+//     }
 
-    // Determine click type based on button
-    let clickType = 'click'; // default to left click
-    if (e.button === 2) {
-      // right click
-      clickType = 'right-click';
-    } else if (e.clicks === 2) {
-      // double click
-      clickType = 'double-click';
-    }
+//     // Determine click type based on button
+//     let clickType = 'click'; // default to left click
+//     if (e.button === 2) {
+//       // right click
+//       clickType = 'right-click';
+//     } else if (e.clicks === 2) {
+//       // double click
+//       clickType = 'double-click';
+//     }
 
-    conversations_screenshots[sessionName].push({
-      function_call: clickType,
-      description: `perform a ${clickType} here`,
-      filepath: cropPath,
-      payload: '',
-      timeSinceLastAction: timeSinceLastClick,
-    });
-    saveConversations(conversations_screenshots);
-  } catch (error) {
-    console.error('Error processing click area:', error);
-  }
-});
-
-// Start the listener
-uIOhook.start();
+//     conversations_screenshots[sessionName].push({
+//       function_call: clickType,
+//       description: `perform a ${clickType} here`,
+//       filepath: cropPath,
+//       payload: '',
+//       timeSinceLastAction: timeSinceLastClick,
+//     });
+//     saveConversations(conversations_screenshots);
+//   } catch (error) {
+//     console.error('Error processing click area:', error);
+//   }
+// });
 
 keyboard.config.autoDelayMs = 0;
 
@@ -395,82 +395,76 @@ async function getActiveWindowInfo(): Promise<ActiveWindowInfo | null> {
           bundleId: ''
         };
       }
-    } else if (process.platform === 'win32') {
-      // Windows implementation using PowerShell
-      const script = `
-        Add-Type @"
-          using System;
-          using System.Runtime.InteropServices;
-          public class Win32 {
-            [DllImport("user32.dll")]
-            public static extern IntPtr GetForegroundWindow();
-            
-            [DllImport("user32.dll")]
-            public static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder text, int count);
-            
-            [DllImport("user32.dll")]
-            public static extern int GetWindowThreadProcessId(IntPtr hWnd, out int processId);
-          }
-"@
-        
-        $hwnd = [Win32]::GetForegroundWindow()
-        $processId = 0
-        [Win32]::GetWindowThreadProcessId($hwnd, [ref]$processId)
-        
-        $process = Get-Process -Id $processId
-        $title = New-Object System.Text.StringBuilder 256
-        [Win32]::GetWindowText($hwnd, $title, 256)
-        
-        @{
-          Title = $title.ToString()
-          Application = $process.ProcessName
-          ExecutablePath = $process.Path
-        } | ConvertTo-Json
-      `;
+    // } else if (process.platform === 'win32') {
+      // try {
+      //   const user32 = new ffi.Library('user32', {
+      //     'GetForegroundWindow': ['pointer', []],
+      //     'GetWindowTextW': ['int', ['pointer', 'pointer', 'int']],
+      //     'GetWindowThreadProcessId': ['uint32', ['pointer', 'pointer']]
+      //   });
 
-      try {
-        const { stdout, stderr } = await execAsync('powershell -Command "' + script + '"', {
-          maxBuffer: 1024 * 1024 // Increase buffer size to 1MB
-        });
+      //   const kernel32 = new ffi.Library('kernel32', {
+      //     'OpenProcess': ['pointer', ['uint32', 'bool', 'uint32']],
+      //     'GetModuleFileNameExW': ['uint32', ['pointer', 'pointer', 'pointer', 'uint32']],
+      //     'CloseHandle': ['bool', ['pointer']]
+      //   });
+
+      //   const hwnd = user32.GetForegroundWindow();
+      //   logToFile(`hwnd: ${hwnd}`);
+      //   if (!hwnd || hwnd.isNull()) {
+      //     return {
+      //       title: '',
+      //       application: '',
+      //       executablePath: ''
+      //     };
+      //   }
+
+      //   // Use Buffer.from() instead of Buffer.alloc()
+      //   const titleBuffer = Buffer.from(new Uint8Array(512)); // 256 * 2 for wide chars
+      //   user32.GetWindowTextW(hwnd, titleBuffer, 256);
+      //   const title = wchar.toString(titleBuffer).replace(/\0/g, '');
+
+      //   const pidBuffer = ref.alloc('uint32') as Buffer;
+      //   user32.GetWindowThreadProcessId(hwnd, pidBuffer);
+      //   const pid = (pidBuffer as any).deref();
+
+      //   const PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
+      //   const hProcess = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
+
+      //   logToFile(`hProcess: ${hProcess}`);
         
-        logToFile(`PowerShell stdout: ${stdout}`);
-        if (stderr) logToFile(`PowerShell stderr: ${stderr}`);
-        
-        // Clean and parse the output
-        const cleanOutput = stdout.trim();
-        if (!cleanOutput) {
-          logToFile('PowerShell returned empty output');
-          return {
-            title: '',
-            application: '',
-            executablePath: ''
-          };
-        }
-        
-        try {
-          const result = JSON.parse(cleanOutput);
-          return {
-            title: result.Title || '',
-            application: result.Application || '',
-            executablePath: result.ExecutablePath || ''
-          };
-        } catch (parseError) {
-          logToFile(`Error parsing PowerShell output: ${parseError}`);
-          logToFile(`Raw output: ${cleanOutput}`);
-          return {
-            title: '',
-            application: '',
-            executablePath: ''
-          };
-        }
-      } catch (winError) {
-        logToFile(`Error executing PowerShell command: ${winError}`);
-        return {
-          title: '',
-          application: '',
-          executablePath: ''
-        };
-      }
+      //   if (!hProcess || hProcess.isNull()) {
+      //     return {
+      //       title: title || '',
+      //       application: '',
+      //       executablePath: ''
+      //     };
+      //   }
+
+      //   try {
+      //     const pathBuffer = Buffer.from(new Uint8Array(2048)); // 1024 * 2 for wide chars
+      //     kernel32.GetModuleFileNameExW(hProcess, null, pathBuffer, 1024);
+      //     const executablePath = wchar.toString(pathBuffer).replace(/\0/g, '');
+      //     const application = path.basename(executablePath, '.exe');
+
+      //     logToFile(`Windows window info: ${title}, ${application}, ${executablePath}`);
+
+      //     return {
+      //       title: title || '',
+      //       application: application || '',
+      //       executablePath: executablePath || ''
+      //     };
+      //   } finally {
+      //     kernel32.CloseHandle(hProcess);
+      //   }
+      // } catch (winError) {
+      //   logToFile(`Error in Windows window info: ${winError}`);
+      //   return {
+      //     title: '',
+      //     application: '',
+      //     executablePath: ''
+      //   };
+      // }
     } else {
       // Linux implementation using xdotool
       try {
@@ -1918,6 +1912,13 @@ ipcMain.on('close-settings', () => {
   }
 });
 
+uIOhook.on('input', (e: UiohookKeyboardEvent | UiohookMouseEvent | UiohookWheelEvent) => {
+  if (e.type === EventType.EVENT_MOUSE_WHEEL || e.type === EventType.EVENT_MOUSE_MOVED || e.type === EventType.EVENT_MOUSE_PRESSED || e.type === EventType.EVENT_MOUSE_RELEASED || e.type === EventType.EVENT_KEY_RELEASED) {
+    return; // ignore mouse events except mouse click. Ignore key release events.
+  }
+  mainWindow?.webContents.send('take-screenshot');
+});
+
 // Initialize app with saved settings
 async function initializeApp() {
   // Load saved settings first
@@ -1930,7 +1931,16 @@ async function initializeApp() {
   await createMainWindow();
   createOverlayWindow();
   createControlWindow();
-  await createAntipatternWindow(); // Add this line
+  // Start the uIOhook event listener
+  try {
+    console.log('uIOhook event listener started successfully');
+    logToFile('uIOhook event listener started successfully');
+    uIOhook.start();
+  } catch (error) {
+    console.log('Error starting uIOhook:', error);
+    logToFile(`Error starting uIOhook: ${error}`);
+  }
+  await createAntipatternWindow(); 
   console.log('App is ready. Listening for global mouse events...');
 
   // Send saved settings to main window
@@ -3215,7 +3225,7 @@ app.on('before-quit', () => {
 // Add IPC handler for antipattern logs
 ipcMain.on('antipattern-log', async (event, logData) => {
   try {
-    logToFile(`Received antipattern log: ${JSON.stringify(logData)}`); // Debug log
+    logToFile(`Received antipattern log: ${JSON.stringify(logData.analysis)}`); // Debug log
     
     // Create window if it doesn't exist
     if (!antipatternWindow || antipatternWindow.isDestroyed()) {
@@ -3225,7 +3235,7 @@ ipcMain.on('antipattern-log', async (event, logData) => {
     
     // Send log to window
     if (antipatternWindow) {
-      antipatternWindow.webContents.send('antipattern-log', logData);
+      antipatternWindow.webContents.send('antipattern-log', logData.analysis);
       logToFile('Sent log to antipattern window'); // Debug log
       
       // Ensure window is visible
