@@ -34,6 +34,9 @@ function SubtitlesComponent({
   const lastScreenshotRef = useRef<string | null>(null);
   const lastUserInteractionRef = useRef<number>(Date.now());
   const lastScreenChangeRef = useRef<number>(Date.now());
+  const IDLE_THRESHOLD = 10 * 1000; // 10 seconds in milliseconds
+  const SCREEN_IDLE_THRESHOLD = 10 * 1000; // 10 seconds in milliseconds
+  // 1 * 60 * 1000; // 1 minute in milliseconds
 
   useEffect(() => {
     setConfig({
@@ -320,11 +323,13 @@ function SubtitlesComponent({
     });
 
     async function checkAntipattern() {
+      // Stop any active streams if antipatternIntervalRef.current is null
+      if (antipatternIntervalRef.current === null) {
+        return;
+      }
       const currentTime = Date.now();
       const timeSinceLastInteraction = currentTime - lastUserInteractionRef.current;
-      const IDLE_THRESHOLD = 10 * 1000; // 10 seconds in milliseconds
-      const SCREEN_IDLE_THRESHOLD = 10 * 1000; // 10 seconds in milliseconds
-      // 1 * 60 * 1000; // 1 minute in milliseconds
+
 
       if (onScreenshot && onSecondaryScreenshot) {
         const currentScreenshot = onScreenshot();
@@ -395,7 +400,28 @@ function SubtitlesComponent({
               ipcRenderer.send('antipattern-log', {
                 type: 'warning',
 
-                message: 'User is not present',
+                message: 'IDLE EVENT: User is not present',
+                analysis: {
+                  ...analysisResult
+                }
+              });
+            } else if(analysisResult.is_learning_platform!=true) {
+              analysisResult.idle_behavior = true;
+              console.log('Antipattern detected: User is present but not on a learning platform');
+              ipcRenderer.send('antipattern-log', {
+
+                type: 'warning',
+                message: 'IDLE EVENT: User is present but not on a learning platform',
+                analysis: {
+                  ...analysisResult
+                }
+              });
+            } else if (analysisResult.is_active_learning_screen!=true) {
+              analysisResult.idle_behavior = true;
+              console.log('Antipattern detected: User is present but not on an active learning screen');
+              ipcRenderer.send('antipattern-log', {
+                type: 'warning',
+                message: 'IDLE EVENT: User is present but not on an active learning screen',
                 analysis: {
                   ...analysisResult
                 }
@@ -407,19 +433,27 @@ function SubtitlesComponent({
               console.log('Antipattern detected: User has been idle with no interaction');
               ipcRenderer.send('antipattern-log', {
                 type: 'warning',
-
-                message: 'User is present but no interaction has been detected',
+                message: 'IDLE EVENT: User is present but no interaction has been detected',
                 analysis: {
                   ...analysisResult
                 }
-
+              });
+            } else if(analysisResult.is_screen_idle) {
+              analysisResult.idle_behavior = true;
+              console.log('Antipattern detected: User is present but screen is idle');
+              ipcRenderer.send('antipattern-log', {
+                type: 'warning',
+                message: 'IDLE EVENT: User is present and active but screen is idle',
+                analysis: {
+                  ...analysisResult
+                }
               });
             } else {
               analysisResult.idle_behavior = false;
               console.log('User is present and active', analysisResult);
               ipcRenderer.send('antipattern-log', {
                 type: 'info',
-                message: 'User is present and active',
+                message: 'NON-IDLE EVENT: User is present and active',
                 analysis: {
                   ...analysisResult
                 }
@@ -612,7 +646,7 @@ function SubtitlesComponent({
             if (antipatternIntervalRef.current !== null) {
               clearInterval(antipatternIntervalRef.current);
               antipatternIntervalRef.current = null;
-              lastScreenshotRef.current = null;
+              lastScreenshotRef.current = null;              
               console.log('Stopped antipattern detection');
             }
             hasResponded = true;
