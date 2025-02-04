@@ -35,8 +35,7 @@ function SubtitlesComponent({
   const lastUserInteractionRef = useRef<number>(Date.now());
   const lastScreenChangeRef = useRef<number>(Date.now());
   const IDLE_THRESHOLD = 10 * 1000; // 10 seconds in milliseconds
-  const SCREEN_IDLE_THRESHOLD = 10 * 1000; // 10 seconds in milliseconds
-  // 1 * 60 * 1000; // 1 minute in milliseconds
+  const SCREEN_IDLE_THRESHOLD = 1 * 60 * 1000; // 1 minute in milliseconds
 
   useEffect(() => {
     setConfig({
@@ -327,8 +326,15 @@ function SubtitlesComponent({
       if (antipatternIntervalRef.current === null) {
         return;
       }
-      const currentTime = Date.now();
-      const timeSinceLastInteraction = currentTime - lastUserInteractionRef.current;
+      const currentTimeNumber = Date.now();
+      const currentTime = new Date(currentTimeNumber).toLocaleTimeString('en-IN', { 
+        hour12: false,
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        timeZone: 'Asia/Kolkata'
+      });
+      const timeSinceLastInteraction = currentTimeNumber - lastUserInteractionRef.current;
 
 
       if (onScreenshot && onSecondaryScreenshot) {
@@ -361,7 +367,11 @@ function SubtitlesComponent({
               }
               
               const result = await response.json();
-              isUserPresent = result.faceDetected;
+              if(result.faceDetected === true) {
+                isUserPresent = true;
+              } else {
+                isUserPresent = false;
+              }
             } catch (error) {
               console.error('Error detecting user presence:', error);
             }
@@ -390,7 +400,7 @@ function SubtitlesComponent({
             // (timeSinceLastInteraction > IDLE_THRESHOLD);
 
             analysisResult.is_user_present = isUserPresent;
-            analysisResult.is_screen_idle = currentTime - lastScreenChangeRef.current > SCREEN_IDLE_THRESHOLD;
+            analysisResult.is_screen_idle = currentTimeNumber - lastScreenChangeRef.current > SCREEN_IDLE_THRESHOLD;
 
 
             // Send antipattern logs to separate window
@@ -405,7 +415,7 @@ function SubtitlesComponent({
                   ...analysisResult
                 }
               });
-            } else if(analysisResult.is_learning_platform!=true) {
+            } else if(analysisResult.is_learning_platform!==true) {
               analysisResult.idle_behavior = true;
               console.log('Antipattern detected: User is present but not on a learning platform');
               ipcRenderer.send('antipattern-log', {
@@ -416,7 +426,7 @@ function SubtitlesComponent({
                   ...analysisResult
                 }
               });
-            } else if (analysisResult.is_active_learning_screen!=true) {
+            } else if (analysisResult.is_active_learning_screen!==true) {
               analysisResult.idle_behavior = true;
               console.log('Antipattern detected: User is present but not on an active learning screen');
               ipcRenderer.send('antipattern-log', {
