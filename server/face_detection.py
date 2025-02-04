@@ -52,8 +52,84 @@ def detect_face():
             'error': str(e)
         }), 500
 
-@app.route('/analyze-screenshot', methods=['POST'])
+@app.route('/compare-screenshots', methods=['POST'])
 def compare_screenshots():
+    try:
+        data = request.json
+        base64_image1 = data['image1']
+        base64_image2 = data['image2']
+
+        if ',' in base64_image1:
+            base64_image1 = base64_image1.split(',')[1]
+        if ',' in base64_image2:
+            base64_image2 = base64_image2.split(',')[1]
+
+
+        logger.info("Making OpenAI API request...")
+        
+        response = client.chat.completions.create(
+                model="gpt-4o-mini",  # Updated model
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": """Provided are two screenshots of a user's screen at a particular time.
+                                
+
+                                Analyze and respond in this exact JSON format:
+                                {
+                                    "is_screen_idle": boolean,
+                                    "explanation": string,
+                                }
+                                
+
+                                Guidelines:
+                                - is_screen_idle: true if both screenshots are of the same screen.
+                                If the screenshots even slightly differ, return false.
+                                For example, if the user has scrolled down in the second screenshot, return false. If one of the screenshots displays one extra element or word, return false. Feel free to use OCR to compare the screenshots but do not hallucinate or rely on OCR completely.
+                                - explanation: brief description of what changed""",
+                            },
+                            {
+                                "type": "image_url",
+                                "image_url": {"url": f"data:image/jpeg;base64,{base64_image1}"},
+                            },
+                            {
+                                "type": "image_url",
+                                "image_url": {"url": f"data:image/jpeg;base64,{base64_image2}"},
+                            },
+                        ],
+                    }
+                ],
+
+
+                max_tokens=500,
+            )
+        
+        # Extract just the JSON content, removing any markdown formatting
+        content = response.choices[0].message.content
+        if '```json' in content:
+            # Extract JSON between triple backticks
+            content = content.split('```json')[1].split('```')[0].strip()
+        elif '```' in content:
+            # Extract JSON between triple backticks (no language specified)
+            content = content.split('```')[1].split('```')[0].strip()
+            
+        # Parse the JSON string to ensure it's valid JSON
+        parsed_content = json.loads(content)
+        
+        logger.info(f"OpenAI API Response (parsed): {parsed_content}")
+        return jsonify(parsed_content)
+    
+    except Exception as e:
+        logger.error(f"Error in compare_screenshots: {str(e)}", exc_info=True)
+        return jsonify({
+            'error': str(e)
+        }), 500
+
+@app.route('/analyze-screenshot', methods=['POST'])
+def analyze_screenshot():
     try:
         data = request.json
         base64_image = data['image']

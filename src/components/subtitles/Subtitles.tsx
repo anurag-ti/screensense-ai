@@ -256,12 +256,26 @@ function SubtitlesComponent({
       }
     }
     async function compareScreenshots(screenshot1: string, screenshot2: string): Promise<boolean> {
-      try {
-        // Use opencv service to compare screenshots
-        const result = await opencvService.compareImages(screenshot1, screenshot2);
+       // Call server API for face detection
+       try {
+        const response = await fetch('http://localhost:5000/compare-screenshots', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+
+          },
+          body: JSON.stringify({ image1: screenshot1, image2: screenshot2 }),
+        });
         
-        // Consider it idle if similarity is above 75%
-        return result.similarity > 0.75;
+
+        if (!response.ok) {
+          throw new Error('Screenshot comparison request failed');
+        }
+        
+        const result = await response.json();
+        return result.is_screen_idle;
+
+
       } catch (error) {
         console.error('Error comparing screenshots:', error);
         return false;
@@ -309,6 +323,8 @@ function SubtitlesComponent({
       const currentTime = Date.now();
       const timeSinceLastInteraction = currentTime - lastUserInteractionRef.current;
       const IDLE_THRESHOLD = 10 * 1000; // 10 seconds in milliseconds
+      const SCREEN_IDLE_THRESHOLD = 10 * 1000; // 10 seconds in milliseconds
+      // 1 * 60 * 1000; // 1 minute in milliseconds
 
       if (onScreenshot && onSecondaryScreenshot) {
         const currentScreenshot = onScreenshot();
@@ -369,7 +385,8 @@ function SubtitlesComponent({
             // (timeSinceLastInteraction > IDLE_THRESHOLD);
 
             analysisResult.is_user_present = isUserPresent;
-            analysisResult.screen_idle_time = lastScreenChangeRef.current ? currentTime - lastScreenChangeRef.current : 0;
+            analysisResult.is_screen_idle = currentTime - lastScreenChangeRef.current > SCREEN_IDLE_THRESHOLD;
+
 
             // Send antipattern logs to separate window
             if (!isUserPresent) {
