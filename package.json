@@ -17,6 +17,7 @@
     "eventemitter3": "^5.0.1",
     "lodash": "^4.17.21",
     "node-global-key-listener": "^0.3.0",
+    "openai": "^4.82.0",
     "posthog-js": "^1.205.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

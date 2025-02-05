@@ -6,6 +6,7 @@ import vegaEmbed from 'vega-embed';
 import { trackEvent } from '../../shared/analytics';
 import { omniParser } from '../../services/omni-parser';
 import { opencvService } from '../../services/opencv-service';
+import OpenAI from 'openai';
 const { ipcRenderer } = window.require('electron');
 
 interface SubtitlesProps {
@@ -36,6 +37,12 @@ function SubtitlesComponent({
   const lastScreenChangeRef = useRef<number>(Date.now());
   const IDLE_THRESHOLD = 10 * 1000; // 10 seconds in milliseconds
   const SCREEN_IDLE_THRESHOLD = 1 * 60 * 1000; // 1 minute in milliseconds
+
+  // Add OpenAI client import and initialization
+  const openai = new OpenAI({
+    apiKey: process.env.REACT_APP_OPENAI_API_KEY,
+    dangerouslyAllowBrowser: true
+  });
 
   useEffect(() => {
     setConfig({
@@ -257,30 +264,130 @@ function SubtitlesComponent({
         ipcRenderer.send('log-to-file', `Failed to capture screenshot`);
       }
     }
-    async function compareScreenshots(screenshot1: string, screenshot2: string): Promise<boolean> {
-       // Call server API for face detection
-       try {
-        const response = await fetch('http://localhost:5000/compare-screenshots', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
+    async function compareScreenshots(image1: string, image2: string): Promise<boolean> {
+      try {
+        image1 = image1.split(',')[1];
+        image2 = image2.split(',')[1];
+        const response = await openai.chat.completions.create({
+          model: "gpt-4o-mini",
+          messages: [
+            {
+              role: "user",
+              content: [
+                {
+                  type: "text",
+                  text: `Provided are two screenshots of a user's screen at a particular time.
 
-          },
-          body: JSON.stringify({ image1: screenshot1, image2: screenshot2 }),
+                    Analyze and respond in this exact JSON format:
+                    {
+                        "is_screen_idle": boolean,
+                        "explanation": string,
+                    }
+                    
+                    Guidelines:
+                    - is_screen_idle: true if both screenshots are of the same screen.
+                    If the screenshots even slightly differ, return false.
+                    For example, if the user has scrolled down in the second screenshot, return false. If one of the screenshots displays one extra element or word, return false. Feel free to use OCR to compare the screenshots but do not hallucinate or rely on OCR completely.
+                    - explanation: brief description of what changed`
+                },
+                {
+                  type: "image_url",
+                  image_url: { url: `data:image/jpeg;base64,${image1}` }
+                },
+                {
+                  type: "image_url",
+                  image_url: { url: `data:image/jpeg;base64,${image2}` }
+                }
+              ]
+            }
+          ],
+          max_tokens: 500
         });
-        
 
-        if (!response.ok) {
-          throw new Error('Screenshot comparison request failed');
+        let content = response.choices[0].message.content;
+        if (!content) {
+          throw new Error('No content received from OpenAI');
         }
-        
-        const result = await response.json();
-        return result.is_screen_idle;
+        // Extract JSON content from markdown if present
+        if (content.includes('```json')) {
+          content = content.split('```json')[1].split('```')[0].trim();
+        } else if (content.includes('```')) {
+          content = content.split('```')[1].split('```')[0].trim();
+        }
 
+        // Parse and validate JSON
+        const result = JSON.parse(content);
+        return result.is_screen_idle;
 
       } catch (error) {
         console.error('Error comparing screenshots:', error);
         return false;
+      }
+    }
+    async function analyzeScreenshot(image: string, currentTime: string) {
+      try {
+        image = image.split(',')[1];
+        const response = await openai.chat.completions.create({
+          model: "gpt-4o-mini",
+          messages: [
+            {
+              role: "user",
+              content: [
+                {
+                  type: "text",
+                  text: `Provided is a screenshot of a user's screen at a particular time along with the current time.
+                  
+                  Analyze and respond in this exact JSON format:
+                  {
+                      "is_learning_platform": boolean,
+                      "app_name": string,
+                      "course_name": string,
+                      "subject": string,
+                      "is_active_learning_screen": boolean,
+                      "explanation": string,
+                      "current_time": string
+                  }
+                  
+
+                  Guidelines:
+                  - is_learning_platform: true if the screenshot is from a learning platform
+                  - app_name: name of the application or software or website for learning being used otherwise null
+                  - course_name: name of the course if visible otherwise null
+                  - subject: subject matter or topic being studied otherwise null
+                  - is_active_learning_screen: true if the screenshot is from a learning platform's active session like quiz, assignment, video etc. Non-active screens include dashboard, login, test results page, summary, test selection page , any page of non-learning platform etc.
+                  - explanation: brief description of what changed
+                  - current_time: Return the provided current time`
+                },
+                {
+                  type: "image_url",
+                  image_url: { url: `data:image/jpeg;base64,${image}` }
+                },
+                {
+                  type: "text",
+                  text: `Current time: ${currentTime}`
+                }
+              ]
+            }
+          ],
+          max_tokens: 500
+        });
+
+        let content = response.choices[0].message.content;
+        if (!content) {
+          throw new Error('No content received from OpenAI');
+        }
+        // Extract JSON content from markdown if present
+        if (content.includes('```json')) {
+          content = content.split('```json')[1].split('```')[0].trim();
+        } else if (content.includes('```')) {
+          content = content.split('```')[1].split('```')[0].trim();
+        }
+
+        // Parse and validate JSON
+        return JSON.parse(content);
+      } catch (error) {
+        console.error('Error analyzing screenshot:', error);
+        throw error;
       }
     }
     // alternate: paymoapp/active-window -- npm package
@@ -379,22 +486,7 @@ function SubtitlesComponent({
 
           // Analyze screenshot with LLM for app, course, and subject info
           try {
-            const response = await fetch('http://localhost:5000/analyze-screenshot', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({ 
-                image: currentScreenshot,
-                current_time: currentTime,
-              }),
-            });
-            
-            if (!response.ok) {
-              throw new Error('Screenshot analysis failed');
-            }
-
-            const analysisResult = await response.json();
+            const analysisResult = await analyzeScreenshot(currentScreenshot, currentTime);
             // analysisResult.is_active_screen = 
             // await isChromeBrowser() && 
             // (timeSinceLastInteraction > IDLE_THRESHOLD);
