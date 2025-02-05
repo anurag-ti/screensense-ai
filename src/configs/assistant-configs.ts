@@ -496,12 +496,34 @@ const antipatternTools: Tool[] = [
     functionDeclarations: [
       {
         name: "start_antipattern_detection",
-        description: "Starts monitoring for user antipatterns like idling",
+        description: "Starts monitoring for user antipatterns",
       },
       {
         name: "stop_antipattern_detection",
         description: "Stops monitoring for user antipatterns",
-      }
+      },
+      {
+        name: "get_screenshot_details",
+        description: "Returns the details of the screenshots provided as screenshare. Use this function when requested. Also use the screenshots provided.",
+        parameters: {
+          type: SchemaType.OBJECT,
+          properties: {
+            is_learning_platform: { type: SchemaType.BOOLEAN, description: "Whether the screenshot is from a learning platform like IXL, KhanAcademy etc." },
+            app_name: { type: SchemaType.STRING, description: "Name of the app as shown on the screenshot" },
+            course_name: { type: SchemaType.STRING, description: "Name of the course as shown on the screenshot. If not present, return an empty string" },
+            subject: { type: SchemaType.STRING, description: "Subject of the course as shown on the screenshot. If not present, return an empty string" },
+
+            is_active_learning_screen: { type: SchemaType.BOOLEAN, description: "Whether the screenshot is from an active learning screen like a quiz or a problem. Non active learning screens are like the main dashboard of the app, login page, settings page, result page, etc." },
+
+            explanation: { type: SchemaType.STRING, description: "A detailed explanation of how you chose to fill the details in the other fields." },
+            current_time: { type: SchemaType.STRING, description: "Current time in format like 12:00:00 AM. Generally you will be provided with the current time in the prompt." },
+            // is_user_present: { type: SchemaType.BOOLEAN, description: "Whether the user is present in the screenshot. If the user is not present, you must return false. Use secondary screenshots to determine if the user is present." },
+          },
+          required: ['is_learning_platform', 'app_name', 'course_name', 'subject', 'is_active_learning_screen', 'explanation', 'current_time'
+            // , 'is_user_present'
+          ],
+          },
+        },
     ],
   },
 ];
@@ -835,14 +857,17 @@ Your ultimate goal is to help users build a deeper understanding of the subject 
 Primary Purpose: Monitor and detect user antipatterns. Antipatterns are activities that are not conducive to learning. Something like idling on a non-quiz screen of a learning platform for too long, no user detected on camera, user looking into phone screen, user eating food, etc.
 
 Your Tools:
-- You can start and stop antipattern detection
+- You have access to the get_screenshot_details function, start_antipattern_detection function and stop_antipattern_detection function.
+- You can call the get_screenshot_details function. Fill in the details in the get_screenshot_details function. You must use the information provided as screenshare to you
 - Only you should invoke these tools; do not instruct the user to do so.
 
 
 Key Directives:
 1. Start monitoring when requested
 2. Stop monitoring when requested
-3. Maintain a helpful, professional tone when conversing with the user.
+3. Call the get_screenshot_details function when requested. Fill in the details in the get_screenshot_details function.
+4. Maintain a helpful, professional tone when conversing with the user.
+5. Do not say anything to the user before, during or after the get_screenshot_details function is called.
 
 Your mission: Help users identify and avoid antipatterns in their workflow by monitoring their activity.`
   },
@@ -850,3 +875,36 @@ Your mission: Help users identify and avoid antipatterns in their workflow by mo
 
 // Type for the configuration modes
 export type AssistantConfigMode = keyof typeof assistantConfigs;
+
+// {
+//   name: "get_screenshot_details",
+//   description: "Returns the details of the screenshots provided as screenshare. Use this function when requested.",
+//   parameters: {
+//     type: SchemaType.OBJECT,
+//     properties: {
+//     screenshot_details: {
+//       type: SchemaType.ARRAY,
+//       items: {
+//         type: SchemaType.OBJECT,
+//         properties: {
+//           is_learning_platform: { type: SchemaType.BOOLEAN, description: "Whether the screenshot is from a learning platform like IXL, KhanAcademy etc." },
+
+//           app_name: { type: SchemaType.STRING, description: "Name of the app as shown on the screenshot" },
+//           course_name: { type: SchemaType.STRING, description: "Name of the course as shown on the screenshot. If not present, return an empty string" },
+//           subject: { type: SchemaType.STRING, description: "Subject of the course as shown on the screenshot. If not present, return an empty string" },
+
+//           is_active_learning_screen: { type: SchemaType.BOOLEAN, description: "Whether the screenshot is from an active learning screen like a quiz or a problem. Non active learning screens are like the main dashboard of the app, login page, settings page, result page, etc." },
+
+//           explanation: { type: SchemaType.STRING, description: "A detailed explanation of how you chose to fill the details in the other fields." },
+//           current_time: { type: SchemaType.STRING, description: "Current time in format like 12:00:00 AM. Generally you will be provided with the current time in the prompt." },
+//           is_user_present: { type: SchemaType.BOOLEAN, description: "Whether the user is present in the screenshot. If the user is not present, you must return false. Use secondary screenshots to determine if the user is present." },
+//             },
+//         required: ['is_learning_platform', 'app_name', 'course_name', 'subject', 'is_active_learning_screen', 'explanation', 'current_time', 'is_user_present'],
+//         },
+//       }
+//     }
+//   }
+// },
+// ],
+// },
+// ];

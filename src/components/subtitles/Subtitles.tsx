@@ -1,5 +1,5 @@
 import { type Tool } from '@google/generative-ai';
-import { useEffect, useState, useRef, memo } from 'react';
+import { useEffect, useState, useRef, memo, useCallback } from 'react';
 import { useLiveAPIContext, useSecondaryLiveAPIContext } from '../../contexts/LiveAPIContext';
 import { ToolCall } from '../../multimodal-live-types';
 import vegaEmbed from 'vega-embed';
@@ -8,6 +8,12 @@ import { omniParser } from '../../services/omni-parser';
 import { opencvService } from '../../services/opencv-service';
 import OpenAI from 'openai';
 const { ipcRenderer } = window.require('electron');
+
+interface ScreenshotQueue {
+  primary: string[];
+  secondary: string[];
+  maxSize: number;
+}
 
 interface SubtitlesProps {
   tools: Tool[];
@@ -32,11 +38,36 @@ function SubtitlesComponent({
   const graphRef = useRef<HTMLDivElement>(null);
   const lastActionTimeRef = useRef<number>(0);
   const antipatternIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const screenshotQueueRef = useRef<NodeJS.Timeout | null>(null);
   const lastScreenshotRef = useRef<string | null>(null);
   const lastUserInteractionRef = useRef<number>(Date.now());
   const lastScreenChangeRef = useRef<number>(Date.now());
   const IDLE_THRESHOLD = 10 * 1000; // 10 seconds in milliseconds
   const SCREEN_IDLE_THRESHOLD = 1 * 60 * 1000; // 1 minute in milliseconds
+
+  // Add queue state
+  const [screenshotQueue, setScreenshotQueue] = useState<ScreenshotQueue>({
+    primary: [],
+    secondary: [],
+    maxSize: 10
+  });
+  const queueIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Add queue management functions
+  const addToQueue = useCallback((primary: string | null, secondary: string | null) => {
+    setScreenshotQueue(prev => {
+      const newQueue = { ...prev };
+      
+      if (primary) {
+        newQueue.primary = [...prev.primary, primary].slice(-prev.maxSize);
+      }
+      if (secondary) {
+        newQueue.secondary = [...prev.secondary, secondary].slice(-prev.maxSize);
+      }
+      
+      return newQueue;
+    });
+  }, []);
 
   // Add OpenAI client import and initialization
   const openai = new OpenAI({
@@ -425,7 +456,7 @@ function SubtitlesComponent({
         return;
       }
       lastUserInteractionRef.current = Date.now();
-      await checkAntipattern();
+      // await checkAntipattern();
     });
 
     async function checkAntipattern() {
@@ -737,20 +768,129 @@ function SubtitlesComponent({
             play_action = true;
             break;
           case "start_antipattern_detection":
-            if (antipatternIntervalRef.current === null) {
-              lastScreenshotRef.current = onScreenshot?.() || null;
-              antipatternIntervalRef.current = setInterval(checkAntipattern, 5000);
+            try {
+              if (antipatternIntervalRef.current === null && onScreenshot && onSecondaryScreenshot) {
+                // lastScreenshotRef.current = onScreenshot?.() || null;
+                console.log('Starting screenshot queue');
+                screenshotQueueRef.current = setInterval(async () => {
+                  const primaryScreenshot = onScreenshot();
+                  const currentBase64 = primaryScreenshot?.split(',')[1];
+                  const lastBase64 = screenshotQueue.primary.at(-1)?.split(',')[1];
+                  // const secondaryScreenshot = onSecondaryScreenshot();
+
+                  if(screenshotQueue.primary.length !== 0 && currentBase64 && lastBase64) {
+                    const isSameScore = await opencvService.compareImages(currentBase64, lastBase64);
+                    // if(isSameScore.similarity < 0.98) {
+                      // if(currentBase64 
+                      //   // && secondaryScreenshot
+                      // ) {
+                        addToQueue(currentBase64, null
+                          // secondaryScreenshot
+                        );
+                        console.log("Added to queue");
+                      // }
+                    // }
+                  }
+              }, 500);
+              console.log('Screenshot queue set');
+
+
+              antipatternIntervalRef.current = setInterval(() => {
+                const currentTime = new Date().toLocaleTimeString('en-IN', {
+                  hour12: false,
+
+                  hour: '2-digit',
+                  minute: '2-digit',
+                  second: '2-digit'
+                });
+                const primaryScreenshots = screenshotQueue.primary
+                const secondaryScreenshots = screenshotQueue.secondary
+
+                if(primaryScreenshots.length === 0 || secondaryScreenshots.length === 0) {
+                  client.send([{text: `Call get_screenshot_details function with current time as ${currentTime}`}]);
+                } else {
+                  const sendItems = [];
+                  for(let i=0; i<primaryScreenshots.length; i++) {
+                    if(i==0)
+                    {
+                      sendItems.push({
+                        text: `Here are a few screenshots from screen`,
+                      });
+                    }
+                    sendItems.push({
+                      inlineData: {mimeType: "image/jpeg", data: primaryScreenshots[i]},
+                    });
+                  }
+                  screenshotQueue.primary = [];
+                  screenshotQueue.secondary = [];
+                  sendItems.push({text: `Call get_screenshot_details function with current time as ${currentTime}`});
+                  console.log("sendItems", sendItems.length);
+                  client.send(sendItems);
+
+                  // client.send([
+                    // {text: "Here are 6 pairs of screenshots from screen and webcam"},
+
+                    // {inlineData: {mimeType: "image/jpeg", data: primaryScreenshots[0]}},
+                    // {inlineData: {mimeType: "image/jpeg", data: secondaryScreenshots[0]}},
+
+                    // {inlineData: {mimeType: "image/jpeg", data: primaryScreenshots[1]}},
+                    // {inlineData: {mimeType: "image/jpeg", data: secondaryScreenshots[1]}},
+
+                    // {inlineData: {mimeType: "image/jpeg", data: primaryScreenshots[2]}},
+                    // {inlineData: {mimeType: "image/jpeg", data: secondaryScreenshots[2]}},
+
+                    // {inlineData: {mimeType: "image/jpeg", data: primaryScreenshots[3]}},
+                    // {inlineData: {mimeType: "image/jpeg", data: secondaryScreenshots[3]}},
+
+                    // {inlineData: {mimeType: "image/jpeg", data: primaryScreenshots[4]}},
+                    // {inlineData: {mimeType: "image/jpeg", data: secondaryScreenshots[4]}},
+
+                    // {inlineData: {mimeType: "image/jpeg", data: primaryScreenshots[5]}},
+                    // {inlineData: {mimeType: "image/jpeg", data: secondaryScreenshots[5]}},
+
+                  //   {text: `Call get_screenshot_details function with current time as ${currentTime}`}]);
+                  }
+              }, 2000);
               console.log('Started antipattern detection');
             }
+            } catch (error) {
+                console.error('Error starting antipattern detection:', error);
+                ipcRenderer.send('log-to-file', `Error starting antipattern detection: ${error}`);
+              }
+
+
             hasResponded = true;
             break;
           case "stop_antipattern_detection":
-            if (antipatternIntervalRef.current !== null) {
+            if (antipatternIntervalRef.current !== null && screenshotQueueRef.current!=null) {
+              clearInterval(screenshotQueueRef.current);
               clearInterval(antipatternIntervalRef.current);
               antipatternIntervalRef.current = null;
+              screenshotQueueRef.current = null;
               lastScreenshotRef.current = null;              
               console.log('Stopped antipattern detection');
             }
+            hasResponded = true;
+            break;
+          case "get_screenshot_details":
+            // console.log('get_screenshot_details', fc.args);
+            // const screenshotDetails = (fc.args as any).screenshot_details;
+            // screenshotDetails.forEach((detail: any) => {
+            //   ipcRenderer.send('antipattern-log', {
+            //     type: 'warning',
+            //     message: 'EVENT: Screenshot details',
+            //     analysis: {
+            //       ...detail
+            //     }
+            //   });
+            // });
+            ipcRenderer.send('antipattern-log', {
+              type: 'warning',
+              message: 'EVENT: Screenshot details',
+              analysis: {
+                ...(fc.args as any)
+              }
+            });
             hasResponded = true;
             break;
           case "select_content":
