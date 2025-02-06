@@ -44,29 +44,34 @@ function SubtitlesComponent({
   const lastScreenChangeRef = useRef<number>(Date.now());
   const IDLE_THRESHOLD = 10 * 1000; // 10 seconds in milliseconds
   const SCREEN_IDLE_THRESHOLD = 1 * 60 * 1000; // 1 minute in milliseconds
-
+  let lastBase64: string | null | undefined = null;
   // Add queue state
-  const [screenshotQueue, setScreenshotQueue] = useState<ScreenshotQueue>({
+  const screenshotQueue = useRef<{
+    primary: string[];
+    secondary: string[];
+    maxSize: number;
+  }>({
     primary: [],
     secondary: [],
     maxSize: 10
   });
+  
   const queueIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // Add queue management functions
   const addToQueue = useCallback((primary: string | null, secondary: string | null) => {
-    setScreenshotQueue(prev => {
-      const newQueue = { ...prev };
-      
-      if (primary) {
-        newQueue.primary = [...prev.primary, primary].slice(-prev.maxSize);
-      }
-      if (secondary) {
-        newQueue.secondary = [...prev.secondary, secondary].slice(-prev.maxSize);
-      }
-      
-      return newQueue;
-    });
+    if (primary) {
+      screenshotQueue.current.primary = [
+        ...screenshotQueue.current.primary, 
+        primary
+      ].slice(-screenshotQueue.current.maxSize);
+    }
+    if (secondary) {
+      screenshotQueue.current.secondary = [
+        ...screenshotQueue.current.secondary, 
+        secondary
+      ].slice(-screenshotQueue.current.maxSize);
+    }
   }, []);
 
   // Add OpenAI client import and initialization
@@ -775,24 +780,39 @@ function SubtitlesComponent({
                 screenshotQueueRef.current = setInterval(async () => {
                   const primaryScreenshot = onScreenshot();
                   const currentBase64 = primaryScreenshot?.split(',')[1];
-                  const lastBase64 = screenshotQueue.primary.at(-1)?.split(',')[1];
+                  // const lastBase64 = screenshotQueue.current.primary.at(-1)?.split(',')[1];
                   // const secondaryScreenshot = onSecondaryScreenshot();
 
-                  if(screenshotQueue.primary.length !== 0 && currentBase64 && lastBase64) {
+
+
+                  if(currentBase64 && lastBase64) {
                     const isSameScore = await opencvService.compareImages(currentBase64, lastBase64);
-                    // if(isSameScore.similarity < 0.98) {
+                    if(isSameScore.similarity < 0.98) {
                       // if(currentBase64 
                       //   // && secondaryScreenshot
                       // ) {
-                        addToQueue(currentBase64, null
+                        screenshotQueue.current.primary.push(currentBase64);
+                        // addToQueue(currentBase64, null
                           // secondaryScreenshot
-                        );
-                        console.log("Added to queue");
-                      // }
+                        // );
+                        console.log("queue addition");
+                      } else {
+                        console.log("Same score");
+                      }
                     // }
+                  } else {
+                    if(currentBase64) {
+                      screenshotQueue.current.primary.push(currentBase64);
+                    // addToQueue(currentBase64, null
+                      // secondaryScreenshot
+                    // );
+                    console.log("Added to queue 1st time");
                   }
+                  }
+                  lastBase64 = currentBase64;
               }, 500);
               console.log('Screenshot queue set');
+
 
 
               antipatternIntervalRef.current = setInterval(() => {
@@ -803,8 +823,9 @@ function SubtitlesComponent({
                   minute: '2-digit',
                   second: '2-digit'
                 });
-                const primaryScreenshots = screenshotQueue.primary
-                const secondaryScreenshots = screenshotQueue.secondary
+                const primaryScreenshots = screenshotQueue.current.primary
+                const secondaryScreenshots = screenshotQueue.current.secondary
+
 
                 if(primaryScreenshots.length === 0 || secondaryScreenshots.length === 0) {
                   client.send([{text: `Call get_screenshot_details function with current time as ${currentTime}`}]);
@@ -821,11 +842,12 @@ function SubtitlesComponent({
                       inlineData: {mimeType: "image/jpeg", data: primaryScreenshots[i]},
                     });
                   }
-                  screenshotQueue.primary = [];
-                  screenshotQueue.secondary = [];
+                  screenshotQueue.current.primary = [];
+                  screenshotQueue.current.secondary = [];
                   sendItems.push({text: `Call get_screenshot_details function with current time as ${currentTime}`});
                   console.log("sendItems", sendItems.length);
                   client.send(sendItems);
+
 
                   // client.send([
                     // {text: "Here are 6 pairs of screenshots from screen and webcam"},
