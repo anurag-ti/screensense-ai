@@ -7,6 +7,7 @@ import { trackEvent } from '../../shared/analytics';
 import { omniParser } from '../../services/omni-parser';
 import { opencvService } from '../../services/opencv-service';
 import OpenAI from 'openai';
+import { langchainService } from '../../services/langchain-service';
 const { ipcRenderer } = window.require('electron');
 
 interface ScreenshotQueue {
@@ -815,7 +816,7 @@ function SubtitlesComponent({
 
 
 
-              antipatternIntervalRef.current = setInterval(() => {
+              antipatternIntervalRef.current = setInterval(async () => {
                 const currentTime = new Date().toLocaleTimeString('en-IN', {
                   hour12: false,
 
@@ -825,28 +826,23 @@ function SubtitlesComponent({
                 });
                 const primaryScreenshots = screenshotQueue.current.primary
                 const secondaryScreenshots = screenshotQueue.current.secondary
-
-
-                if(primaryScreenshots.length === 0 || secondaryScreenshots.length === 0) {
-                  client.send([{text: `Call get_screenshot_details function with current time as ${currentTime}`}]);
-                } else {
-                  const sendItems = [];
-                  for(let i=0; i<primaryScreenshots.length; i++) {
-                    if(i==0)
-                    {
-                      sendItems.push({
-                        text: `Here are a few screenshots from screen`,
-                      });
-                    }
-                    sendItems.push({
-                      inlineData: {mimeType: "image/jpeg", data: primaryScreenshots[i]},
-                    });
-                  }
-                  screenshotQueue.current.primary = [];
-                  screenshotQueue.current.secondary = [];
-                  sendItems.push({text: `Call get_screenshot_details function with current time as ${currentTime}`});
-                  console.log("sendItems", sendItems.length);
-                  client.send(sendItems);
+                  // const sendItems = [];
+                  // for(let i=0; i<primaryScreenshots.length; i++) {
+                  //   if(i==0)
+                  //   {
+                  //     sendItems.push({
+                  //       text: `Here are a few screenshots from screen`,
+                  //     });
+                  //   }
+                  //   sendItems.push({
+                  //     inlineData: {mimeType: "image/jpeg", data: primaryScreenshots[i]},
+                  //   });
+                  // }
+                  // screenshotQueue.current.primary = [];
+                  // screenshotQueue.current.secondary = [];
+                  // sendItems.push({text: `Call get_screenshot_details function with current time as ${currentTime}`});
+                  // console.log("sendItems", sendItems.length);
+                  // client.send(sendItems);
 
 
                   // client.send([
@@ -871,7 +867,16 @@ function SubtitlesComponent({
                     // {inlineData: {mimeType: "image/jpeg", data: secondaryScreenshots[5]}},
 
                   //   {text: `Call get_screenshot_details function with current time as ${currentTime}`}]);
-                  }
+
+                  const analysis = await langchainService.analyzeScreenshot(primaryScreenshots, currentTime);
+                  ipcRenderer.send('antipattern-log', {
+                    type: 'warning',
+                    message: 'EVENT: Screenshot details',
+                    analysis: {
+                      ...analysis
+                    }
+                  });
+                  
               }, 2000);
               console.log('Started antipattern detection');
             }
@@ -906,6 +911,7 @@ function SubtitlesComponent({
             //     }
             //   });
             // });
+            console.log("Gemini calling");
             ipcRenderer.send('antipattern-log', {
               type: 'warning',
               message: 'EVENT: Screenshot details',
