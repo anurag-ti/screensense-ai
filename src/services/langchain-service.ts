@@ -51,7 +51,7 @@ Your task is to analyze screenshots and determine if they represent active learn
         * Login screens
         * Results/grades pages etc.
     - explanation: Brief description of what changed between screenshots and any patterns observed
-    - current_time: Return the provided current time: ${currentTime}
+    - current_time: Return the following time without any changes: ${currentTime}
     - user_activity: Brief description of user's apparent activity based on screen changes
     - idle_behavior: true if screenshots suggest user inactivity (e.g. no changes between screenshots, stuck on non-learning pages)
 

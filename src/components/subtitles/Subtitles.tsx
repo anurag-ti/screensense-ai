@@ -97,6 +97,70 @@ function SubtitlesComponent({
     });
   }, [setConfig, systemInstruction, tools, assistantMode]);
 
+  // useEffect(() => {
+  //   try {
+  //     if (antipatternIntervalRef.current === null && onScreenshot && onSecondaryScreenshot) {
+  //       // lastScreenshotRef.current = onScreenshot?.() || null;
+  //       console.log('Starting screenshot queue');
+  //       screenshotQueueRef.current = setInterval(async () => {
+  //         const primaryScreenshot = onScreenshot();
+  //         const currentBase64 = primaryScreenshot?.split(',')[1];
+
+  //         if(currentBase64 && lastBase64) {
+  //           const isSameScore = await opencvService.compareImages(currentBase64, lastBase64);
+  //           if(isSameScore.similarity < 0.98) {
+  //               screenshotQueue.current.primary.push(currentBase64);
+  //               console.log("queue addition");
+  //             } else {
+  //               console.log("Same score");
+  //             }
+  //         } else {
+  //           if(currentBase64) {
+  //             screenshotQueue.current.primary.push(currentBase64);
+  //           console.log("Added to queue 1st time");
+  //         }
+  //         }
+  //         lastBase64 = currentBase64;
+  //     }, 500);
+  //     console.log('Screenshot queue set');
+
+  //     antipatternIntervalRef.current = setInterval(async () => {
+  //       const currentTime = new Date().toLocaleTimeString('en-IN', {
+  //         hour12: false,
+
+  //         hour: '2-digit',
+  //         minute: '2-digit',
+  //         second: '2-digit'
+  //       });
+  //       const primaryScreenshots = screenshotQueue.current.primary
+
+  //         const analysis = await langchainService.analyzeScreenshot(primaryScreenshots, currentTime);
+  //         ipcRenderer.send('antipattern-log', {
+  //           type: 'warning',
+  //           message: 'EVENT: Screenshot details',
+  //           analysis: {
+  //             ...analysis
+  //           }
+  //         });
+          
+  //     }, 2000);
+  //     console.log('Started antipattern detection');
+  //   }
+  //   } catch (error) {
+  //       console.error('Error starting antipattern detection:', error);
+  //       ipcRenderer.send('log-to-file', `Error starting antipattern detection: ${error}`);
+  //     }
+
+  //     return () => {
+  //       if(screenshotQueueRef.current) {
+  //         clearInterval(screenshotQueueRef.current);
+  //       }
+  //       if(antipatternIntervalRef.current) {
+  //         clearInterval(antipatternIntervalRef.current);
+  //       }
+  //     }
+  // }, [onScreenshot, onSecondaryScreenshot])
+
   useEffect(() => {
     async function get_opencv_coordinates(path: string, screenshot: any) {
       if (screenshot) {
