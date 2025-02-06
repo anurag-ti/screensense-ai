@@ -5,6 +5,7 @@ import { ToolCall } from '../../multimodal-live-types';
 import vegaEmbed from 'vega-embed';
 import { trackEvent } from '../../shared/analytics';
 import { omniParser } from '../../services/omni-parser';
+
 import { opencvService } from '../../services/opencv-service';
 import OpenAI from 'openai';
 import { langchainService } from '../../services/langchain-service';
@@ -875,7 +876,7 @@ function SubtitlesComponent({
                   }
                   }
                   lastBase64 = currentBase64;
-              }, 500);
+              }, 2300);
               console.log('Screenshot queue set');
 
 
@@ -937,11 +938,11 @@ function SubtitlesComponent({
                     type: 'warning',
                     message: 'EVENT: Screenshot details',
                     analysis: {
-                      ...analysis
+                      analysis
                     }
                   });
                   
-              }, 2000);
+              }, 10000);
               console.log('Started antipattern detection');
             }
             } catch (error) {

@@ -323,7 +323,7 @@ function ControlTray({
 
   useEffect(() => {
     // Listen for error messages from main process
-    ipcRenderer.on('show-error-toast', (_, message) => {
+    ipcRenderer.on('show-error-toast', (_: any, message: any) => {
       setErrorMessage(message);
     });
 
