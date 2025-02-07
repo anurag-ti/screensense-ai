@@ -31,6 +31,34 @@ import sharp from 'sharp';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 const execAsync = promisify(exec);
+
+const activeWin = require('active-win');
+
+async function getActiveApp() {
+    const win = await activeWin();
+    logToFile(`Active app: ${win?.title}`);
+    logToFile(`------------------------------------------------------------------`);
+}
+
+const { windowManager } = require("node-window-manager");
+
+function getAllWindows() {
+    const windows = windowManager.getWindows();
+    // create a set of all windows
+    const windowsSet = new Set<string>();
+    windows.map((win: any) => {
+      if (win.isVisible() && win.getTitle() !== "") {
+        windowsSet.add(win.getTitle() + " | " + win.isVisible());
+      }
+    });
+    windowsSet.forEach((window: string) => {
+        logToFile(`Active windows: ${window}`);
+    });
+    getActiveApp();
+}
+
+// setInterval(getActiveApp, 1000);
+setInterval(getAllWindows, 10000);
 // import { omniParser } from './omni-parser';
 
 // Set environment variables for the packaged app
